@@ -1,0 +1,5 @@
+# Normalize the Supabase schema instead of mirroring the flat-file blob
+
+Migrating persistence from a local flat file (`server.py` writing one JSON blob per save, then diffing old vs. new state to derive the activity log) to Supabase for the Netlify + Supabase deployment (issue #1). Considered mirroring that shape as a single JSONB column, with a trigger or function reproducing the diff-based log derivation. Chose instead to normalize into real tables (`places`, `visit_history`, `activity_log`, `settings`, `quota`), with the client writing exactly what changed at the point of change rather than diffing a whole-state overwrite after the fact.
+
+The diff-based log only existed because a flat file has no per-row update granularity — Postgres does. Normalizing also removes a race the blob model was exposed to: two devices both `POST`-ing the whole state around the same time silently clobber each other's changes; per-row writes narrow that to per-field conflicts, which are far less likely to matter for a single user.
