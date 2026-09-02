@@ -1,0 +1,49 @@
+# Python caches and compiled files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Operating system artifacts
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Environment and local configuration
+.env
+.env.*
+!.env.example
+*.local
+
+# Private keys and certificates
+*.key
+*.pem
+*.p12
+*.pfx
+*.crt
+*.cer
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+
+# Local prospecting state written by server.py
+/prospection.json
+/backlog.json
+
+# Backups
+*.bak
+*.backup
+*.old
+*~
+
+# Generated build and coverage output
+/build/
+/dist/
+/coverage/
+/.coverage
+/.pytest_cache/
+
+# User-specific editor configuration
+/.idea/
+/.vscode/

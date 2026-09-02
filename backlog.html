@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#101828" />
+    <title>NFC Prospection · Backlog</title>
+    <link rel="stylesheet" href="styles.css?v=41" />
+  </head>
+  <body class="backlog-page">
+    <header class="backlog-header"><a href="index.html">← Accueil</a><div><p class="eyebrow">SUIVI TECHNIQUE</p><h1>Dev / Backlog</h1></div></header>
+    <main class="backlog-main">
+      <div class="backlog-head"><p id="backlog-summary">Chargement du journal…</p><label>Afficher <select id="backlog-size"><option value="25">25</option><option value="50" selected>50</option><option value="100">100</option></select> événements</label></div>
+      <div id="backlog-list" class="backlog-list"></div>
+      <nav id="backlog-pagination" class="backlog-pagination hidden" aria-label="Pagination du journal"></nav>
+    </main>
+    <script src="backlog.js?v=41"></script>
+  </body>
+</html>

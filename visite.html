@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#101828" />
+    <title>NFC Prospection · Visite</title>
+    <link rel="stylesheet" href="styles.css?v=38" />
+  </head>
+  <body class="visit-page">
+    <header class="visit-header">
+      <a class="visit-back" href="index.html">← <span>Accueil</span></a>
+      <div><p class="eyebrow">JOURNÉE TERRAIN</p><h1>Visites</h1></div>
+      <span id="visit-count" class="visit-count">0</span>
+    </header>
+    <main class="visit-main">
+      <section id="visit-list-section" class="visit-list-section">
+        <label class="visit-search"><span>⌕</span><input id="visit-search" type="search" placeholder="Rechercher un établissement ou une commune" autocomplete="off" /></label>
+        <p id="visit-list-message" class="visit-list-message"></p>
+        <div id="visit-list" class="visit-list"></div>
+      </section>
+      <section id="visit-editor" class="visit-editor hidden" aria-live="polite"></section>
+    </main>
+    <div id="visit-confirm" class="visit-confirm hidden" role="dialog" aria-modal="true" aria-labelledby="visit-confirm-title">
+      <div class="visit-confirm-card">
+        <p class="eyebrow">CONFIRMATION</p>
+        <h2 id="visit-confirm-title">Confirmer la mise à jour ?</h2>
+        <p id="visit-confirm-text"></p>
+        <div><button id="visit-confirm-cancel" type="button">Retour</button><button id="visit-confirm-save" class="primary" type="button">Confirmer</button></div>
+      </div>
+    </div>
+    <div id="visit-toast" class="visit-toast hidden" role="status"></div>
+    <script src="visit.js?v=37"></script>
+  </body>
+</html>
