@@ -2,6 +2,10 @@
 
 Outil local pour rechercher des établissements Google, suivre leur statut commercial et copier un lien Google Maps à encoder sur une carte NFC.
 
+## Application preview
+
+![NFC Prospecting map interface](docs/images/nfc-prospecting-map.png)
+
 ## Démarrage
 
 1. Lancez `server.py` puis ouvrez `http://127.0.0.1:4173/` ; ne double-cliquez pas simplement sur `index.html`.
