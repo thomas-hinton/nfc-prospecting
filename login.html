@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#101828" />
+    <meta name="robots" content="noindex" />
+    <title>NFC Prospection · Connexion</title>
+    <link rel="stylesheet" href="styles.css?v=43" />
+  </head>
+  <body class="landing-page">
+    <main class="auth-shell">
+      <form id="login-form" class="auth-card">
+        <div class="landing-brand"><span class="brand-mark">N</span><span>NFC Prospection</span></div>
+        <p class="eyebrow">ACCÈS PRIVÉ</p>
+        <h1>Connecte-toi.</h1>
+        <label for="login-email">Adresse e-mail</label>
+        <input id="login-email" type="email" autocomplete="username" required />
+        <label for="login-password">Mot de passe</label>
+        <input id="login-password" type="password" autocomplete="current-password" required />
+        <button id="login-submit" class="primary" type="submit">Se connecter</button>
+        <p id="login-message" class="form-message" aria-live="polite"></p>
+      </form>
+    </main>
+    <script src="config.js"></script>
+    <script src="nfc-login.js"></script>
+  </body>
+</html>

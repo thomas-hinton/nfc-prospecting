@@ -17,4 +17,7 @@ A field-visit event recorded against an établissement when its status is resolv
 The read-only technical audit trail of everything that happened to the prospecting data — établissement added, status changed, comment added, Google API request made. This is not a product/task backlog; this repo's actual issue backlog lives in GitHub Issues (see `docs/agents/issue-tracker.md`).
 
 **Quota**:
-The running count of Google Maps Platform API requests (Places API + Maps JavaScript API, combined) consumed in the current calendar month, checked against a fixed monthly limit before each request that would consume it.
+The running count of Google Maps Platform API requests (Places API + Maps JavaScript API, combined) consumed in the current calendar month, checked against the account's monthly limit (1 000 by default) before each request that would consume it. The check and the increment happen together, in the database, so two devices can't both read a stale count and jointly overshoot.
+
+**Store**:
+The single client-side data-access module (`src/store.js`) that talks to Supabase. Every page reads and writes prospecting data through it; no other code holds a Supabase client.

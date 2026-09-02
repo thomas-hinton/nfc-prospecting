@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#101828" />
     <title>NFC Prospection · Prospection</title>
-    <link rel="stylesheet" href="styles.css?v=34" />
+    <link rel="stylesheet" href="styles.css?v=43" />
   </head>
-  <body data-page="prospection">
+  <body data-requires-auth data-page="prospection">
     <div id="app-shell">
       <header class="topbar">
         <a class="brand" href="index.html" title="Retour à l’accueil"><span class="brand-mark">N</span><span>NFC Prospection</span></a>
@@ -169,6 +169,7 @@
       </article>
     </template>
 
-    <script src="app.js?v=42"></script>
+    <script src="config.js"></script>
+    <script src="nfc-auth-gate.js" onerror="document.body.removeAttribute('data-requires-auth')" data-page-script="app.js?v=42"></script>
   </body>
 </html>

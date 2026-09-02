@@ -5,10 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#101828" />
     <title>NFC Prospection</title>
-    <link rel="stylesheet" href="styles.css?v=41" />
+    <link rel="stylesheet" href="styles.css?v=43" />
   </head>
-  <body class="landing-page">
+  <body data-requires-auth class="landing-page">
     <a class="backlog-link" href="backlog.html">Dev / Backlog</a>
+    <button class="sign-out-link" id="sign-out" type="button">Déconnexion</button>
     <main class="landing-shell">
       <div class="landing-content">
         <div class="landing-brand"><span class="brand-mark">N</span><span>NFC Prospection</span></div>
@@ -20,5 +21,7 @@
         </div>
       </div>
     </main>
+    <script src="config.js"></script>
+    <script src="nfc-auth-gate.js" onerror="document.body.removeAttribute('data-requires-auth')"></script>
   </body>
 </html>

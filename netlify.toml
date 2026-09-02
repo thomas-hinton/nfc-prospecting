@@ -1,0 +1,36 @@
+# Netlify deploys this site automatically on every push to `main` once the repository is
+# linked (see scripts/provision.sh). SUPABASE_URL and SUPABASE_ANON_KEY are set as site
+# environment variables and read by scripts/build.mjs at build time.
+#
+# Only `dist/` is published: the repository's sources, tests, tooling and docs stay off
+# the public site.
+
+[build]
+  command = "npm ci && npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+
+# Generated on every build under a stable name, so they must never be served stale.
+[[headers]]
+  for = "/config.js"
+  [headers.values]
+    Cache-Control = "no-store"
+
+[[headers]]
+  for = "/nfc-auth-gate.js"
+  [headers.values]
+    Cache-Control = "no-store"
+
+[[headers]]
+  for = "/nfc-login.js"
+  [headers.values]
+    Cache-Control = "no-store"

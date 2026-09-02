@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#101828" />
     <title>NFC Prospection · Visite</title>
-    <link rel="stylesheet" href="styles.css?v=38" />
+    <link rel="stylesheet" href="styles.css?v=43" />
   </head>
-  <body class="visit-page">
+  <body data-requires-auth class="visit-page">
     <header class="visit-header">
       <a class="visit-back" href="index.html">← <span>Accueil</span></a>
       <div><p class="eyebrow">JOURNÉE TERRAIN</p><h1>Visites</h1></div>
@@ -30,6 +30,7 @@
       </div>
     </div>
     <div id="visit-toast" class="visit-toast hidden" role="status"></div>
-    <script src="visit.js?v=37"></script>
+    <script src="config.js"></script>
+    <script src="nfc-auth-gate.js" onerror="document.body.removeAttribute('data-requires-auth')" data-page-script="visit.js?v=37"></script>
   </body>
 </html>

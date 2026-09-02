@@ -37,6 +37,9 @@ desktop.ini
 *.old
 *~
 
+# Node dependencies
+/node_modules/
+
 # Generated build and coverage output
 /build/
 /dist/
