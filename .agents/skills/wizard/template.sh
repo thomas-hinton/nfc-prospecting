@@ -91,8 +91,14 @@ confirm() {
 # _existing KEY: current value of KEY in ENV_FILE, if any.
 _existing() {
   [[ -f "$ENV_FILE" ]] || return 1
-  local line; line=$(grep -E "^${1}=" "$ENV_FILE" | tail -n1) || return 1
-  printf '%s' "${line#*=}"
+  local line value; line=$(grep -E "^${1}=" "$ENV_FILE" | tail -n1) || return 1
+  value=${line#*=}
+  # Reverse _shell_quote so re-runs offer the real value, not its quoted form.
+  if [[ $value == \'*\' ]]; then
+    value=${value:1:${#value}-2}
+    value=${value//"'\''"/"'"}
+  fi
+  printf '%s' "$value"
 }
 
 # ask KEY "Prompt" reads a value into $KEY. Offers the existing .env value as
@@ -125,14 +131,22 @@ ask_secret() {
   printf -v "$key" '%s' "$input"
 }
 
-# write_env KEY VALUE upserts KEY=VALUE into ENV_FILE (creates it; replaces
-# any existing line). Idempotent.
+# _shell_quote VALUE prints it single-quoted, so `. "$ENV_FILE"` reads the value
+# back exactly as typed whatever it holds: quotes, spaces, $, backticks, \.
+# A single quote closes the string, escapes itself, and reopens it.
+_shell_quote() {
+  printf "'%s'" "${1//\'/\'\\\'\'}"
+}
+
+# write_env KEY VALUE upserts KEY='VALUE' into ENV_FILE (creates it; replaces
+# any existing line). Idempotent. Values come from `read -r`, so they never
+# contain a newline and stay one line each.
 write_env() {
   local key="$1" value="$2" tmp
   touch "$ENV_FILE"
   tmp=$(mktemp)
   grep -vE "^${key}=" "$ENV_FILE" > "$tmp" || true
-  printf '%s=%s\n' "$key" "$value" >> "$tmp"
+  printf '%s=%s\n' "$key" "$(_shell_quote "$value")" >> "$tmp"
   mv "$tmp" "$ENV_FILE"
   WRITTEN_ENV+=("$key")
   printf '  %s✓ wrote%s %s → %s\n' "$GREEN" "$RESET" "$key" "$ENV_FILE"
