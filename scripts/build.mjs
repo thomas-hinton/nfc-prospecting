@@ -21,16 +21,19 @@ const STATIC_FILES = [
   'visite.html',
   'backlog.html',
   'styles.css',
-  'app.js',
   'visit.js',
   'backlog.js',
 ];
 
 const supabaseUrl = process.env.SUPABASE_URL ?? '';
 const supabaseAnonKey = process.env.SUPABASE_ANON_KEY ?? '';
+const googleMapsApiKey = process.env.GOOGLE_MAPS_API_KEY ?? '';
 
 if (!supabaseUrl || !supabaseAnonKey) {
   console.warn('[build] SUPABASE_URL / SUPABASE_ANON_KEY are not set — the site will show a configuration error.');
+}
+if (!googleMapsApiKey) {
+  console.warn('[build] GOOGLE_MAPS_API_KEY is not set — the Prospection map and search will be unavailable.');
 }
 
 rmSync(dist, { recursive: true, force: true });
@@ -41,13 +44,14 @@ for (const file of STATIC_FILES) copyFileSync(join(root, file), join(dist, file)
 writeFileSync(
   join(dist, 'config.js'),
   '// Généré par scripts/build.mjs — ne pas modifier à la main.\n' +
-    `window.NFC_CONFIG = ${JSON.stringify({ supabaseUrl, supabaseAnonKey }, null, 2)};\n`
+    `window.NFC_CONFIG = ${JSON.stringify({ supabaseUrl, supabaseAnonKey, googleMapsApiKey }, null, 2)};\n`
 );
 
 await esbuild.build({
   entryPoints: {
     'nfc-auth-gate': join(root, 'src/auth-gate.js'),
     'nfc-login': join(root, 'src/login.js'),
+    'nfc-prospection': join(root, 'src/prospection.js'),
   },
   outdir: dist,
   bundle: true,
@@ -57,4 +61,4 @@ await esbuild.build({
   logLevel: 'info',
 });
 
-console.log(`[build] ${STATIC_FILES.length + 1} static files + 2 bundles → dist/`);
+console.log(`[build] ${STATIC_FILES.length + 1} static files + 3 bundles → dist/`);

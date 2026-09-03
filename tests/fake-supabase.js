@@ -1,17 +1,135 @@
+let nextRowId = 1;
+const uid = (prefix) => `${prefix}-${nextRowId++}`;
+
+/** Column defaults per table, mirroring supabase/migrations/20260902000000_foundation.sql. */
+function rowDefaults(table) {
+  const now = new Date().toISOString();
+  if (table === 'places') {
+    return { status: 'to_visit', sale_amount: null, created_at: now, status_changed_at: now, updated_at: now };
+  }
+  if (table === 'activity_log') {
+    return { place_name: '', address: '', details: null, at: now };
+  }
+  return {};
+}
+
+/**
+ * A tiny stand-in for the PostgREST query builder the store chains off `client.from()`.
+ * Only the operations `src/store.js` actually uses are implemented: `select`/`eq`/`order`
+ * (with `maybeSingle` as a terminal), and `insert`/`upsert` optionally followed by
+ * `select()` to return the affected rows.
+ */
+function createTableQuery(table, state) {
+  let op = { type: 'select' };
+  const filters = [];
+  let orderSpec = null;
+  let wantsSelectBack = false;
+
+  function requireAuth() {
+    if (!state.session) return { message: 'not authenticated', code: '42501' };
+    return null;
+  }
+
+  function rows() {
+    return state.tables[table].filter((row) => row.user_id === state.session.user.id);
+  }
+
+  function applyFilters(list) {
+    return list.filter((row) => filters.every((f) => row[f.column] === f.value));
+  }
+
+  function applyOrder(list) {
+    if (!orderSpec) return list;
+    const { column, ascending } = orderSpec;
+    return [...list].sort((a, b) => (a[column] > b[column] ? 1 : a[column] < b[column] ? -1 : 0) * (ascending ? 1 : -1));
+  }
+
+  async function execute() {
+    const authError = requireAuth();
+    if (authError) return { data: null, error: authError };
+
+    if (op.type === 'select') {
+      const data = applyOrder(applyFilters(rows()));
+      return { data, error: null };
+    }
+
+    if (op.type === 'insert') {
+      const inserted = op.rows.map((row) => ({ id: uid(table), ...rowDefaults(table), ...row }));
+      state.tables[table].push(...inserted);
+      return { data: wantsSelectBack ? inserted : null, error: null };
+    }
+
+    if (op.type === 'upsert') {
+      const conflictColumns = (op.options.onConflict || '').split(',').filter(Boolean);
+      const existing = conflictColumns.length
+        ? state.tables[table].find((row) => conflictColumns.every((column) => row[column] === op.row[column]))
+        : undefined;
+
+      if (existing) {
+        if (op.options.ignoreDuplicates) return { data: wantsSelectBack ? [] : null, error: null };
+        Object.assign(existing, op.row, { updated_at: new Date().toISOString() });
+        return { data: wantsSelectBack ? [existing] : null, error: null };
+      }
+
+      const created = { id: uid(table), ...rowDefaults(table), ...op.row };
+      state.tables[table].push(created);
+      return { data: wantsSelectBack ? [created] : null, error: null };
+    }
+
+    return { data: null, error: { message: `unsupported operation: ${op.type}` } };
+  }
+
+  const query = {
+    select(_columns = '*') {
+      wantsSelectBack = true;
+      return query;
+    },
+    eq(column, value) {
+      filters.push({ column, value });
+      return query;
+    },
+    order(column, { ascending = true } = {}) {
+      orderSpec = { column, ascending };
+      return query;
+    },
+    insert(rows) {
+      op = { type: 'insert', rows: Array.isArray(rows) ? rows : [rows] };
+      return query;
+    },
+    upsert(row, options = {}) {
+      op = { type: 'upsert', row, options };
+      return query;
+    },
+    async maybeSingle() {
+      const { data, error } = await execute();
+      if (error) return { data: null, error };
+      if (!data || data.length === 0) return { data: null, error: null };
+      if (data.length > 1) return { data: null, error: { message: 'multiple rows returned' } };
+      return { data: data[0], error: null };
+    },
+    then(onFulfilled, onRejected) {
+      return execute().then(onFulfilled, onRejected);
+    },
+  };
+
+  return query;
+}
+
 /**
  * In-memory stand-in for the parts of `@supabase/supabase-js` the store uses.
  *
  * It mirrors the observable behaviour of the real client — `{ data, error }` envelopes,
- * the auth state callback, and the `increment_quota` RPC's check-then-increment semantics
- * (see supabase/migrations/20260902000000_foundation.sql) — so store tests never need a
- * real Supabase project.
+ * the auth state callback, the `increment_quota` RPC's check-then-increment semantics
+ * (see supabase/migrations/20260902000000_foundation.sql), and a minimal `.from()` table
+ * query builder — so store tests never need a real Supabase project.
  */
-export function createFakeSupabase({ account = null, monthlyLimit = 1000, quota = {} } = {}) {
+export function createFakeSupabase({ account = null, monthlyLimit = 1000, quota = {}, tables = {} } = {}) {
   const listeners = new Set();
   const state = {
     session: null,
     monthlyLimit,
     quota: { places: 0, maps: 0, ...quota },
+    tables: { places: [], activity_log: [], ...tables },
   };
 
   function emit(event) {
@@ -59,5 +177,9 @@ export function createFakeSupabase({ account = null, monthlyLimit = 1000, quota 
     return { data: [{ allowed: true, total: next, monthly_limit: state.monthlyLimit }], error: null };
   }
 
-  return { auth, rpc, state };
+  function from(table) {
+    return createTableQuery(table, state);
+  }
+
+  return { auth, rpc, from, state };
 }

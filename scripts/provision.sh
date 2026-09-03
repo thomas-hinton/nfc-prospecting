@@ -197,7 +197,7 @@ finish() {
 # STAGES: author this section. One stage() per step the human takes.
 # ──────────────────────────────────────────────────────────────────────────
 
-TOTAL_STAGES=7
+TOTAL_STAGES=8
 
 # Captured values belong in the repository's .env, whichever directory the
 # wizard is run from.
@@ -282,13 +282,26 @@ step "Set the production branch to 'main', then deploy."
 ask NETLIFY_SITE_URL "Paste the site URL Netlify gave you (https://....netlify.app):"
 write_env NETLIFY_SITE_URL "$NETLIFY_SITE_URL"
 
-# ── 7. Netlify environment variables and first real deploy ────────────────
+# ── 7. Create the Google Maps API key ─────────────────────────────────────
+stage "Google Cloud: create the Maps API key"
+say "The Prospection page needs this key baked into the build; there is no in-app"
+say "field for pasting a personal key."
+open_url "https://console.cloud.google.com/google/maps-apis/credentials"
+step "Click 'Create credentials' → 'API key'."
+step "Enable the 'Places API' and 'Maps JavaScript API' for the project."
+step "Edit the key → 'Application restrictions' → 'Websites' → add $NETLIFY_SITE_URL/*"
+step "  (add a custom domain too if you attach one later)."
+ask_secret GOOGLE_MAPS_API_KEY "Paste the Maps API key:"
+write_env GOOGLE_MAPS_API_KEY "$GOOGLE_MAPS_API_KEY"
+
+# ── 8. Netlify environment variables and first real deploy ────────────────
 stage "Netlify: environment variables"
 say "scripts/build.mjs reads these at build time and writes them into dist/config.js."
 open_url "https://app.netlify.com/sites/_/configuration/env"
 step "Site configuration → Environment variables → 'Add a variable'."
 step "Add SUPABASE_URL = $SUPABASE_URL"
 step "Add SUPABASE_ANON_KEY = (the anon key from stage 2)."
+step "Add GOOGLE_MAPS_API_KEY = (the key from stage 7)."
 warn "Never add SUPABASE_SERVICE_ROLE_KEY here: it would reach the browser."
 step "Then Deploys → 'Trigger deploy' → 'Clear cache and deploy site'."
 pause "Deploy finished?"

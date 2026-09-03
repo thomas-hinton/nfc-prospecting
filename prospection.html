@@ -11,44 +11,36 @@
     <div id="app-shell">
       <header class="topbar">
         <a class="brand" href="index.html" title="Retour à l’accueil"><span class="brand-mark">N</span><span>NFC Prospection</span></a>
-        <nav class="view-tabs" aria-label="Navigation principale">
-          <button class="view-tab active" data-view="map" type="button">Carte</button>
-          <button class="view-tab" data-view="dashboard" type="button">Tableau de bord</button>
-          <button class="view-tab" data-view="manual" type="button">Ajout manuel</button>
-        </nav>
-        <div class="quota" id="quota-summary" aria-live="polite">0 / 1 000 requêtes ce mois</div>
-        <button id="settings-button" class="icon-button" title="Réglages" aria-label="Réglages">⚙</button>
       </header>
 
       <aside class="sidebar">
         <section class="intro">
-          <p class="eyebrow">PROSPECTION LOCALE</p>
+          <p class="eyebrow">PROSPECTION</p>
           <h1>Trouve tes prochains clients.</h1>
-          <p>Recherche les fiches Google, classe-les, puis copie le lien à programmer sur ta carte NFC.</p>
+          <p>Recherche une fiche Google, ajoute-la à ta liste, puis copie le lien à programmer sur ta carte NFC.</p>
         </section>
 
+        <form id="city-form" class="search-form">
+          <label for="city">Centrer sur une ville</label>
+          <input id="city" name="city" type="text" placeholder="Ex. Saint-Cyr-sur-Mer" autocomplete="off" />
+          <button id="center-button" class="secondary" type="submit">Centrer la carte</button>
+          <p id="city-message" class="form-message" aria-live="polite"></p>
+        </form>
+
         <form id="search-form" class="search-form">
-          <label for="query">Activité ou recherche</label>
-          <input id="query" name="query" type="text" placeholder="Optionnel : boulangerie, restaurant…" autocomplete="off" />
-          <label for="location">Ville ou zone</label>
-          <input id="location" name="location" type="text" placeholder="Ex. Saint-Cyr-sur-Mer" autocomplete="off" />
-          <button id="center-button" class="secondary" type="button">Centrer la carte sur cette ville</button>
-          <button id="search-button" class="primary" type="submit">Balayer la zone affichée</button>
-          <p class="search-hint">Sans activité, l’outil cherche tous les types d’établissements dans la zone visible.</p>
+          <label for="query">Rechercher un établissement</label>
+          <input id="query" name="query" type="text" placeholder="Nom ou adresse de l’établissement" autocomplete="off" required />
+          <button id="search-button" class="primary" type="submit">Rechercher</button>
           <p id="search-message" class="form-message" aria-live="polite"></p>
         </form>
 
+        <section id="results-section" class="filters hidden">
+          <div class="section-title"><h2>Résultats</h2></div>
+          <div id="search-results" class="place-list" aria-live="polite"></div>
+        </section>
+
         <section class="filters">
           <div class="section-title"><h2>Mes établissements</h2><span id="saved-count">0</span></div>
-          <p id="map-count" class="map-count">0 affiché sur 0 dans la zone</p>
-          <div class="filter-buttons" role="group" aria-label="Filtrer par statut">
-            <button class="filter active" data-filter="all" type="button">Tous</button>
-            <button class="filter" data-filter="to_visit" type="button">À visiter</button>
-            <button class="filter" data-filter="scheduled" type="button">Visite programmée</button>
-            <button class="filter" data-filter="sold" type="button">Vendu</button>
-            <button class="filter" data-filter="refused" type="button">Refusé</button>
-            <button class="filter" data-filter="non_compliant" type="button">Non conforme</button>
-          </div>
           <div id="place-list" class="place-list" aria-live="polite"></div>
         </section>
       </aside>
@@ -59,105 +51,12 @@
           <div>
             <span class="placeholder-pin">⌖</span>
             <h2>Ta carte de prospection</h2>
-            <p>Ajoute ta clé Google Maps dans les réglages pour commencer.</p>
-            <button class="primary" id="placeholder-settings" type="button">Configurer ma clé</button>
+            <p id="map-placeholder-text">Chargement de la carte…</p>
           </div>
         </div>
         <div id="detail-card" class="detail-card hidden" aria-live="polite"></div>
-        <section id="dashboard-panel" class="dashboard-panel hidden">
-          <div class="dashboard-header"><div><p class="eyebrow">SUIVI COMMERCIAL</p><h2>Tableau de bord</h2><p>Vue d’ensemble de ta prospection et de toutes tes fiches enregistrées.</p></div></div>
-          <div class="metric-grid">
-            <article class="metric sold"><span>Vendu</span><strong id="metric-sold">0</strong><small id="metric-revenue">0,00 €</small></article>
-            <article class="metric refused"><span>Refusé</span><strong id="metric-refused">0</strong></article>
-            <article class="metric scheduled"><span>Visite programmée</span><strong id="metric-scheduled">0</strong><small id="metric-scheduled-potential">0,00 € potentiel</small></article>
-            <article class="metric visit"><span>À visiter</span><strong id="metric-to-visit">0</strong><small id="metric-to-visit-potential">0,00 € potentiel</small></article>
-          </div>
-          <section class="dashboard-list-section">
-            <div class="dashboard-list-head"><div><h3>Tous les établissements</h3><span id="dashboard-total">0 fiches</span></div><label class="dashboard-select-all"><input id="dashboard-select-all" type="checkbox" /> Tout sélectionner</label></div>
-            <div class="dashboard-filters">
-              <select id="dashboard-sort"><option value="name">Trier : nom</option><option value="city">Trier : commune</option><option value="type">Trier : type</option><option value="status">Trier : statut</option><option value="created_date_desc">Ajout : récent d'abord</option><option value="created_date_asc">Ajout : ancien d'abord</option><option value="status_date_desc">Évolution : récente d'abord</option><option value="status_date_asc">Évolution : ancienne d'abord</option></select>
-              <select id="dashboard-city"><option value="">Toutes les communes</option></select>
-              <select id="dashboard-type"><option value="">Tous les types</option></select>
-              <div class="status-filter">
-                <button id="dashboard-status-toggle" class="status-filter-toggle" type="button" aria-expanded="false"><span class="status-dot all"></span><span id="dashboard-status-label">Tous les statuts</span><span class="chevron">⌄</span></button>
-                <div id="dashboard-status-menu" class="status-filter-menu hidden">
-                  <button data-dashboard-status="" type="button"><span class="status-dot all"></span>Tous les statuts</button>
-                  <button data-dashboard-status="to_visit" type="button"><span class="status-dot"></span>À visiter</button>
-                  <button data-dashboard-status="scheduled" type="button"><span class="status-dot scheduled"></span>Programmé pour visite</button>
-                  <button data-dashboard-status="sold" type="button"><span class="status-dot sold"></span>Vendu</button>
-                  <button data-dashboard-status="refused" type="button"><span class="status-dot refused"></span>Refusé</button>
-                  <button data-dashboard-status="non_compliant" type="button"><span class="status-dot non_compliant"></span>Non conforme</button>
-                </div>
-                <input id="dashboard-status" type="hidden" value="" />
-              </div>
-            </div>
-            <div id="dashboard-table" class="dashboard-table"></div>
-            <div id="dashboard-pagination" class="dashboard-pagination hidden">
-              <span id="pagination-summary">0-0 sur 0</span>
-              <div id="pagination-pages" class="pagination-pages"></div>
-              <label>Afficher <select id="dashboard-page-size"><option value="50">50</option><option value="100">100</option><option value="200">200</option></select> par page</label>
-            </div>
-            <div id="bulk-status-bar" class="bulk-status-bar hidden" aria-live="polite">
-              <div><strong id="bulk-selected-count">0 établissement sélectionné</strong><span>Changer le statut de la sélection</span></div>
-              <div class="bulk-actions">
-                <button data-export="xlsx" class="bulk-export" type="button">Télécharger Excel</button>
-                <button data-export="pdf" class="bulk-export" type="button">Télécharger PDF</button>
-                <button data-bulk-status="to_visit" class="to_visit" type="button">À visiter</button>
-                <button data-bulk-status="scheduled" class="scheduled" type="button">Programmer</button>
-                <button data-bulk-status="sold" class="sold" type="button">Vendu</button>
-                <button data-bulk-status="refused" class="refused" type="button">Refusé</button>
-                <button data-bulk-status="non_compliant" class="non_compliant" type="button">Non conforme</button>
-                <button id="bulk-clear" class="bulk-clear" type="button">Annuler</button>
-              </div>
-            </div>
-          </section>
-        </section>
-        <section id="manual-panel" class="manual-panel hidden">
-          <div class="manual-card">
-            <p class="eyebrow">AJOUT MANUEL</p>
-            <h2>Ajouter une fiche Google</h2>
-            <p>Colle le lien Google Maps ou le lien partagé. L’outil vérifiera la fiche avec Google Places avant de l’ajouter.</p>
-            <form id="manual-form" class="manual-form">
-              <label for="manual-link">Lien de la fiche Google</label>
-              <input id="manual-link" type="url" placeholder="https://share.google/... ou https://maps.google.com/..." required />
-              <button id="manual-lookup" class="primary" type="submit">Vérifier la fiche</button>
-              <p id="manual-message" class="form-message" aria-live="polite"></p>
-            </form>
-            <div id="manual-preview" class="manual-preview hidden"></div>
-          </div>
-        </section>
       </main>
     </div>
-
-    <dialog id="settings-dialog">
-      <form method="dialog" id="settings-form">
-        <button class="close-dialog" value="cancel" aria-label="Fermer">×</button>
-        <header class="settings-header"><p class="eyebrow">NFC PROSPECTION</p><h2>Paramètres</h2><p>Configure ta connexion Google, ton tarif de vente et suis tes requêtes du mois.</p></header>
-        <section class="settings-section">
-          <div class="settings-section-head"><span class="settings-section-icon">⌖</span><div><h3>Connexion Google</h3><p>Clé utilisée pour afficher la carte et rechercher les établissements.</p></div></div>
-          <label for="api-key">Clé API Google Maps</label>
-          <input id="api-key" type="password" placeholder="AIza…" autocomplete="off" />
-          <label class="check-label"><input id="show-key" type="checkbox" /> Afficher la clé</label>
-        </section>
-        <section class="settings-section">
-          <div class="settings-section-head"><span class="settings-section-icon sale">€</span><div><h3>Vente par défaut</h3><p>Montant appliqué automatiquement à une nouvelle vente.</p></div></div>
-          <label for="sale-price">Tarif par défaut (€)</label>
-          <input id="sale-price" type="number" min="0" step="0.01" value="50" />
-          <p class="settings-note">Modifier ce tarif ne change jamais les montants des ventes déjà enregistrées.</p>
-        </section>
-        <section class="settings-section quota-details" aria-label="Détail des requêtes Google du mois">
-          <div class="settings-section-head"><span class="settings-section-icon usage">↗</span><div><h3>Utilisation Google</h3><p>Suivi local des requêtes de ce mois.</p></div></div>
-          <p class="quota-total"><strong id="quota-total">0</strong><span>/ 1 000 requêtes au total</span></p>
-          <div><span>Places API</span><strong id="quota-places">0</strong></div>
-          <div><span>Maps JavaScript API</span><strong id="quota-maps">0</strong></div>
-          <small>La carte compte une requête Maps JavaScript à chaque chargement. Les recherches et balayages sont comptés dans Places API.</small>
-        </section>
-        <div class="dialog-actions">
-          <button value="cancel" type="button" id="cancel-settings">Annuler</button>
-          <button class="primary" value="default" type="submit">Enregistrer et charger la carte</button>
-        </div>
-      </form>
-    </dialog>
 
     <template id="place-item-template">
       <article class="place-item">
@@ -165,11 +64,20 @@
           <span class="status-dot"></span>
           <span class="place-item-copy"><strong></strong><small></small></span>
         </button>
-        <button class="status-menu" type="button" aria-label="Remettre à visiter" title="Remettre à visiter">•••</button>
+      </article>
+    </template>
+
+    <template id="result-item-template">
+      <article class="place-item">
+        <span class="place-item-main">
+          <span class="status-dot"></span>
+          <span class="place-item-copy"><strong></strong><small></small></span>
+        </span>
+        <button class="status-menu result-add" type="button" title="Ajouter cet établissement">+</button>
       </article>
     </template>
 
     <script src="config.js"></script>
-    <script src="nfc-auth-gate.js" onerror="document.body.removeAttribute('data-requires-auth')" data-page-script="app.js?v=42"></script>
+    <script src="nfc-auth-gate.js" onerror="document.body.removeAttribute('data-requires-auth')" data-page-script="nfc-prospection.js"></script>
   </body>
 </html>

@@ -110,3 +110,91 @@ describe('checkAndConsumeQuota', () => {
     await expect(store.checkAndConsumeQuota({ api: 'directions' })).rejects.toThrow(/unknown api/i);
   });
 });
+
+describe('établissements', () => {
+  const boulangerie = {
+    placeId: 'place-123',
+    name: 'Boulangerie du Port',
+    address: '12 quai du Port, 83270 Saint-Cyr-sur-Mer',
+    lat: 43.1808,
+    lng: 5.7115,
+    types: ['bakery', 'food'],
+  };
+
+  it('lists no établissement before anything is added', async () => {
+    const { store } = setup();
+    await store.signIn(account.email, account.password);
+    expect(await store.listPlaces()).toEqual([]);
+  });
+
+  it('adds a new établissement, tracked with an initial statut of à visiter', async () => {
+    const { store } = setup();
+    await store.signIn(account.email, account.password);
+
+    const { place, created } = await store.upsertPlace(boulangerie);
+
+    expect(created).toBe(true);
+    expect(place).toMatchObject({
+      placeId: boulangerie.placeId,
+      name: boulangerie.name,
+      address: boulangerie.address,
+      status: 'to_visit',
+    });
+    expect(await store.listPlaces()).toEqual([place]);
+  });
+
+  it('never creates a duplicate row when the same placeId is added again', async () => {
+    const { store } = setup();
+    await store.signIn(account.email, account.password);
+
+    const first = await store.upsertPlace(boulangerie);
+    const second = await store.upsertPlace(boulangerie);
+
+    expect(second.created).toBe(false);
+    expect(second.place).toEqual(first.place);
+    expect(await store.listPlaces()).toHaveLength(1);
+  });
+
+  it('appends exactly one activity_log entry recording the add, and none on a re-add', async () => {
+    const { store, client } = setup();
+    await store.signIn(account.email, account.password);
+
+    await store.upsertPlace(boulangerie);
+    await store.upsertPlace(boulangerie);
+
+    expect(client.state.tables.activity_log).toHaveLength(1);
+    expect(client.state.tables.activity_log[0]).toMatchObject({
+      action: 'place_added',
+      place_name: boulangerie.name,
+      address: boulangerie.address,
+      user_id: account.id,
+    });
+    expect(client.state.tables.activity_log[0].details).toMatch(/à visiter/i);
+  });
+
+  it('never lists établissements belonging to another account', async () => {
+    const { store, client } = setup();
+    client.state.tables.places.push({
+      id: 'other-row',
+      user_id: 'someone-else',
+      place_id: 'place-999',
+      name: 'Établissement voisin',
+      address: '',
+      lat: null,
+      lng: null,
+      types: [],
+      status: 'to_visit',
+      created_at: new Date().toISOString(),
+      status_changed_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+    await store.signIn(account.email, account.password);
+
+    expect(await store.listPlaces()).toEqual([]);
+  });
+
+  it('fails loudly when adding an établissement while signed out', async () => {
+    const { store } = setup();
+    await expect(store.upsertPlace(boulangerie)).rejects.toThrow(/authentification/i);
+  });
+});
