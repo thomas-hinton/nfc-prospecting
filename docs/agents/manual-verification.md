@@ -9,9 +9,9 @@ Uses the label vocabulary from [triage-labels.md](triage-labels.md) and the `gh`
 Only when **all** of the following hold:
 
 - Implementation is finished and the automated test suite passes.
-- One or more acceptance criteria genuinely cannot be verified through automation — they require human access to credentials, an external dashboard or admin console, physical hardware, a billing-enabled service, or interactive browser confirmation (OAuth flows, visual layout, etc.).
+- At least one acceptance criterion genuinely cannot be verified with the tools and access the agent has — it requires human access to credentials, an external dashboard or admin console, physical hardware, a billing-enabled service, or interactive browser confirmation (OAuth flows, visual layout, etc.).
 
-Do not invent manual checks for criteria that can be verified safely and automatically. If everything in the brief can be checked by a script, a unit test, or a read-only API call the agent can already make, do that instead of routing it to a human. This workflow exists for the residue that's left after automation has done everything it can.
+Do not invent manual checks for criteria the agent can verify itself. **If every acceptance criterion can be checked with the tools and access the agent already has — a script, a unit test, a read-only API call — this workflow does not apply at all:** do not add `ready-for-human`, do not create a `## Manual verification required` section, and do not touch `ready-for-agent` on that basis. Report the work as fully verified and let the normal completion path (`/implement`'s test run, `/code-review`, commit) stand on its own. This workflow exists only for the residue left over after automation has done everything it can.
 
 ## What to do
 
@@ -69,14 +69,18 @@ Guidance for filling it in:
 
 ## After the human responds
 
-**Verification succeeds:** remove `ready-for-human`, post a final comment confirming the result, then close the issue.
+Only an explicit message from the human stating that the required manual checks passed counts as confirmation. Completed implementation, passing automated tests, a successful deployment, and the mere presence of the checklist are exactly the things this workflow hands off *past* — none of them count as verification, and none may be treated as if they did. Never infer confirmation from context or from technical evidence; wait for the human to say so.
+
+**No confirmation yet:** take no closing action. Preserve `ready-for-human` and leave the issue open — this is the default, steady state while the checklist is outstanding.
+
+**Human confirms the checks passed:** remove `ready-for-human` and post a comment confirming the result. Confirmation that the checks passed and authorization to close are two separate things — do not treat one as implying the other. Close the issue only if the human's message *also* explicitly asks for or authorizes the close (in the same message or a later one). If confirmation arrives without a closing instruction, ask whether to close rather than closing automatically.
 ```
 gh issue edit <n> --remove-label "ready-for-human"
 gh issue comment <n> --body "..."
-gh issue close <n> --comment "..."
+gh issue close <n> --comment "..."   # only once closing is explicitly authorized
 ```
 
-**Verification fails:** document the reproducible failure in a comment — what was checked, what happened instead of the expected result — with no secrets included. Remove `ready-for-human`, restore `ready-for-agent`, and leave the issue open for another implementation pass.
+**Human reports the checks failed:** document the reproducible failure in a comment — what was checked, what happened instead of the expected result — with no secrets included. Remove `ready-for-human`, restore `ready-for-agent`, and leave the issue open for another implementation pass.
 ```
 gh issue edit <n> --remove-label "ready-for-human" --add-label "ready-for-agent"
 gh issue comment <n> --body "..."
