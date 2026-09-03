@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "build": "node scripts/build.mjs",
+    "migrate": "node scripts/migrate-to-supabase.mjs",
     "test": "vitest run"
   },
   "dependencies": {
