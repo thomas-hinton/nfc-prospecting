@@ -128,15 +128,15 @@ function spatialSample(places, limit, bounds) {
   return selected;
 }
 
-/** Caps the markers drawn on the map at MAX_VISIBLE_MARKERS, sampling each statut bucket separately so a scan of a dense zone doesn't drown out other statuts, and always keeping the selected marker visible. */
-function chooseVisibleMarkers(places, bounds) {
+/** Caps the markers drawn on the map at MAX_VISIBLE_MARKERS, sampling each statut bucket separately so a scan of a dense zone doesn't drown out other statuts, and always keeping `selectedId`'s marker visible. */
+export function chooseVisibleMarkers(places, bounds, selectedId = null) {
   if (places.length <= MAX_VISIBLE_MARKERS || !bounds) return places;
   let remaining = MAX_VISIBLE_MARKERS;
   let result = [];
   for (const status of STATUS_ORDER) {
     if (!remaining) break;
     const group = places.filter((place) => place.status === status);
-    const selected = group.find((place) => place.placeId === state.selectedId);
+    const selected = group.find((place) => place.placeId === selectedId);
     const sample = spatialSample(group, remaining, bounds);
     if (selected && !sample.some((place) => place.placeId === selected.placeId)) {
       sample.pop();
@@ -156,7 +156,7 @@ function renderMarkers() {
   const inFrame = bounds
     ? state.places.filter((place) => place.lat != null && place.lng != null && bounds.contains({ lat: place.lat, lng: place.lng }))
     : state.places.filter((place) => place.lat != null && place.lng != null);
-  const displayed = chooseVisibleMarkers(inFrame, bounds);
+  const displayed = chooseVisibleMarkers(inFrame, bounds, state.selectedId);
   const countEl = $('#map-count');
   if (countEl) countEl.textContent = inFrame.length ? `${displayed.length} affiché${displayed.length > 1 ? 's' : ''} sur ${inFrame.length} dans la zone` : '';
   displayed.forEach((place) => {

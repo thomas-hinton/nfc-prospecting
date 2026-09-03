@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createStore } from '../src/store.js';
 import { createFakeSupabase } from './fake-supabase.js';
-import { runZoneScan, zoneCells } from '../src/prospection.js';
+import { chooseVisibleMarkers, runZoneScan, zoneCells } from '../src/prospection.js';
 
 const account = { email: 'prospecteur@example.com', password: 'correct-horse', id: 'user-1' };
 
@@ -42,6 +42,45 @@ describe('zoneCells', () => {
   it('caps the grid at 100 cells for a very large visible area', () => {
     const cells = zoneCells(fakeBounds({ south: 40, west: 0, north: 45, east: 8 }));
     expect(cells.length).toBeLessThanOrEqual(100);
+  });
+});
+
+describe('chooseVisibleMarkers', () => {
+  function place(overrides = {}) {
+    return { placeId: `place-${Math.random()}`, status: 'to_visit', lat: 43.18, lng: 5.71, ...overrides };
+  }
+
+  it('returns every place unchanged when under the visible-marker cap', () => {
+    const places = Array.from({ length: 10 }, () => place());
+    expect(chooseVisibleMarkers(places, fakeBounds())).toBe(places);
+  });
+
+  it('returns every place unchanged when there are no bounds to sample against, even over the cap', () => {
+    const places = Array.from({ length: 300 }, () => place());
+    expect(chooseVisibleMarkers(places, null)).toBe(places);
+  });
+
+  it('caps the result at MAX_VISIBLE_MARKERS (250) for a dense zone', () => {
+    const places = Array.from({ length: 300 }, (_, index) => place({ placeId: `place-${index}`, lat: 43.17 + (index % 20) * 0.001, lng: 5.7 + Math.floor(index / 20) * 0.001 }));
+    const displayed = chooseVisibleMarkers(places, fakeBounds());
+    expect(displayed.length).toBe(250);
+    expect(new Set(displayed.map((p) => p.placeId)).size).toBe(250);
+  });
+
+  it('samples every statut bucket rather than letting one bucket crowd out the others', () => {
+    const toVisit = Array.from({ length: 200 }, (_, index) => place({ placeId: `visit-${index}`, status: 'to_visit', lat: 43.17 + (index % 20) * 0.001, lng: 5.7 + Math.floor(index / 20) * 0.001 }));
+    const sold = Array.from({ length: 100 }, (_, index) => place({ placeId: `sold-${index}`, status: 'sold', lat: 43.17 + (index % 10) * 0.001, lng: 5.7 + Math.floor(index / 10) * 0.001 }));
+    const displayed = chooseVisibleMarkers([...toVisit, ...sold], fakeBounds());
+    const statuses = new Set(displayed.map((p) => p.status));
+    expect(statuses.has('to_visit')).toBe(true);
+    expect(statuses.has('sold')).toBe(true);
+  });
+
+  it('always keeps the selected marker visible even when it would otherwise be sampled out', () => {
+    const places = Array.from({ length: 300 }, (_, index) => place({ placeId: `place-${index}`, lat: 43.17 + (index % 20) * 0.001, lng: 5.7 + Math.floor(index / 20) * 0.001 }));
+    const targetId = places[150].placeId;
+    const displayed = chooseVisibleMarkers(places, fakeBounds(), targetId);
+    expect(displayed.some((p) => p.placeId === targetId)).toBe(true);
   });
 });
 
