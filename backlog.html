@@ -10,11 +10,17 @@
   <body data-requires-auth class="backlog-page">
     <header class="backlog-header"><a href="index.html">← Accueil</a><div><p class="eyebrow">SUIVI TECHNIQUE</p><h1>Dev / Backlog</h1></div></header>
     <main class="backlog-main">
+      <div class="quota-details">
+        <h3>Quota Google Maps Platform</h3>
+        <div class="quota-total"><strong id="quota-total">0</strong><span>/ <span id="quota-limit">1 000</span> requêtes ce mois</span></div>
+        <div><span>Places API</span><strong id="quota-places">0</strong></div>
+        <div><span>Maps JavaScript API</span><strong id="quota-maps">0</strong></div>
+      </div>
       <div class="backlog-head"><p id="backlog-summary">Chargement du journal…</p><label>Afficher <select id="backlog-size"><option value="25">25</option><option value="50" selected>50</option><option value="100">100</option></select> événements</label></div>
       <div id="backlog-list" class="backlog-list"></div>
       <nav id="backlog-pagination" class="backlog-pagination hidden" aria-label="Pagination du journal"></nav>
     </main>
     <script src="config.js"></script>
-    <script src="nfc-auth-gate.js" onerror="document.body.removeAttribute('data-requires-auth')" data-page-script="backlog.js?v=41"></script>
+    <script src="nfc-auth-gate.js" onerror="document.body.removeAttribute('data-requires-auth')" data-page-script="nfc-backlog.js"></script>
   </body>
 </html>

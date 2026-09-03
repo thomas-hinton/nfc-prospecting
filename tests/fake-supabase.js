@@ -15,15 +15,18 @@ function rowDefaults(table) {
 
 /**
  * A tiny stand-in for the PostgREST query builder the store chains off `client.from()`.
- * Only the operations `src/store.js` actually uses are implemented: `select`/`eq`/`order`
- * (with `maybeSingle` as a terminal), and `insert`/`upsert` optionally followed by
+ * Only the operations `src/store.js` actually uses are implemented: `select`/`eq`/`order`/
+ * `range` (with `maybeSingle` as a terminal, and `select(*, { count: 'exact' })` reporting
+ * the filtered-but-unpaginated row count), and `insert`/`upsert` optionally followed by
  * `select()` to return the affected rows.
  */
 function createTableQuery(table, state) {
   let op = { type: 'select' };
   const filters = [];
   let orderSpec = null;
+  let rangeSpec = null;
   let wantsSelectBack = false;
+  let wantsCount = false;
 
   function requireAuth() {
     if (!state.session) return { message: 'not authenticated', code: '42501' };
@@ -49,8 +52,10 @@ function createTableQuery(table, state) {
     if (authError) return { data: null, error: authError };
 
     if (op.type === 'select') {
-      const data = applyOrder(applyFilters(rows()));
-      return { data, error: null };
+      const filtered = applyFilters(rows());
+      const ordered = applyOrder(filtered);
+      const data = rangeSpec ? ordered.slice(rangeSpec.from, rangeSpec.to + 1) : ordered;
+      return { data, error: null, count: wantsCount ? filtered.length : null };
     }
 
     if (op.type === 'insert') {
@@ -80,8 +85,9 @@ function createTableQuery(table, state) {
   }
 
   const query = {
-    select(_columns = '*') {
+    select(_columns = '*', { count } = {}) {
       wantsSelectBack = true;
+      wantsCount = count === 'exact';
       return query;
     },
     eq(column, value) {
@@ -90,6 +96,10 @@ function createTableQuery(table, state) {
     },
     order(column, { ascending = true } = {}) {
       orderSpec = { column, ascending };
+      return query;
+    },
+    range(from, to) {
+      rangeSpec = { from, to };
       return query;
     },
     insert(rows) {
@@ -129,7 +139,7 @@ export function createFakeSupabase({ account = null, monthlyLimit = 1000, quota 
     session: null,
     monthlyLimit,
     quota: { places: 0, maps: 0, ...quota },
-    tables: { places: [], activity_log: [], ...tables },
+    tables: { places: [], activity_log: [], quota: [], settings: [], ...tables },
   };
 
   function emit(event) {

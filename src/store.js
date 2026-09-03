@@ -31,6 +31,24 @@ function mapPlaceRow(row) {
   };
 }
 
+/** Converts an `activity_log` row (snake_case, as stored) to the shape callers use. */
+function mapActivityLogRow(row) {
+  return {
+    id: row.id,
+    action: row.action,
+    placeName: row.place_name,
+    address: row.address,
+    details: row.details ?? null,
+    at: row.at,
+  };
+}
+
+/** The current calendar month in UTC, formatted as `increment_quota` formats it: `YYYY-MM`. */
+function currentMonthUTC() {
+  const now = new Date();
+  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
 export function createStore({ client }) {
   if (!client) throw new Error('createStore requires a Supabase client');
 
@@ -147,6 +165,54 @@ export function createStore({ client }) {
         .maybeSingle();
       if (fetchError) throwStoreError(fetchError, "Impossible de lire l'établissement existant.");
       return { place: mapPlaceRow(existing), created: false };
+    },
+
+    /**
+     * A page of the current account's activity_log, most-recently-added first.
+     *
+     * @param {{ page?: number, pageSize?: number }} [options]
+     * @returns {Promise<{ entries: object[], total: number, page: number, pageSize: number }>}
+     */
+    async listActivityLog({ page = 1, pageSize = 50 } = {}) {
+      const userId = await currentUserId();
+      const from = (page - 1) * pageSize;
+      const to = from + pageSize - 1;
+      const { data, error, count } = await client
+        .from('activity_log')
+        .select('*', { count: 'exact' })
+        .eq('user_id', userId)
+        .order('at', { ascending: false })
+        .range(from, to);
+      if (error) throwStoreError(error, 'Impossible de lire le journal.');
+      return { entries: (data ?? []).map(mapActivityLogRow), total: count ?? 0, page, pageSize };
+    },
+
+    /**
+     * The current calendar month's Google Maps Platform usage for this account: Places
+     * and Maps request counts, their combined total, and the account's monthly limit.
+     * A read-only companion to checkAndConsumeQuota() — it never counts a request.
+     *
+     * @returns {Promise<{ places: number, maps: number, total: number, monthlyLimit: number }>}
+     */
+    async getQuotaUsage() {
+      const userId = await currentUserId();
+      const month = currentMonthUTC();
+
+      const [quotaResult, settingsResult] = await Promise.all([
+        client.from('quota').select('*').eq('user_id', userId).eq('month', month).maybeSingle(),
+        client.from('settings').select('*').eq('user_id', userId).maybeSingle(),
+      ]);
+      if (quotaResult.error) throwStoreError(quotaResult.error, 'Impossible de lire le quota.');
+      if (settingsResult.error) throwStoreError(settingsResult.error, 'Impossible de lire le quota.');
+
+      const places = quotaResult.data?.places_count ?? 0;
+      const maps = quotaResult.data?.maps_count ?? 0;
+      return {
+        places,
+        maps,
+        total: places + maps,
+        monthlyLimit: settingsResult.data?.monthly_quota_limit ?? DEFAULT_MONTHLY_LIMIT,
+      };
     },
   };
 }

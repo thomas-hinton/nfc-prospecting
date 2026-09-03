@@ -198,3 +198,116 @@ describe('établissements', () => {
     await expect(store.upsertPlace(boulangerie)).rejects.toThrow(/authentification/i);
   });
 });
+
+describe('listActivityLog', () => {
+  function activityRow(overrides = {}) {
+    return {
+      id: `log-${Math.random()}`,
+      user_id: account.id,
+      action: 'place_added',
+      place_name: 'Établissement',
+      address: '',
+      details: null,
+      at: new Date().toISOString(),
+      ...overrides,
+    };
+  }
+
+  it('lists no entry before anything is recorded', async () => {
+    const { store } = setup();
+    await store.signIn(account.email, account.password);
+    expect(await store.listActivityLog()).toEqual({ entries: [], total: 0, page: 1, pageSize: 50 });
+  });
+
+  it('returns entries most-recently-added first', async () => {
+    const { store, client } = setup();
+    await store.signIn(account.email, account.password);
+    client.state.tables.activity_log.push(
+      activityRow({ id: 'log-1', place_name: 'Premier', at: '2026-01-01T00:00:00.000Z' }),
+      activityRow({ id: 'log-2', place_name: 'Second', at: '2026-01-02T00:00:00.000Z' }),
+      activityRow({ id: 'log-3', place_name: 'Troisième', at: '2026-01-03T00:00:00.000Z' })
+    );
+
+    const { entries, total } = await store.listActivityLog();
+
+    expect(total).toBe(3);
+    expect(entries.map((entry) => entry.placeName)).toEqual(['Troisième', 'Second', 'Premier']);
+  });
+
+  it('paginates against the total row count, respecting the requested page size', async () => {
+    const { store, client } = setup();
+    await store.signIn(account.email, account.password);
+    for (let index = 0; index < 5; index += 1) {
+      client.state.tables.activity_log.push(
+        activityRow({ id: `log-${index}`, place_name: `Entrée ${index}`, at: `2026-01-0${index + 1}T00:00:00.000Z` })
+      );
+    }
+
+    const firstPage = await store.listActivityLog({ page: 1, pageSize: 2 });
+    const secondPage = await store.listActivityLog({ page: 2, pageSize: 2 });
+    const lastPage = await store.listActivityLog({ page: 3, pageSize: 2 });
+
+    expect(firstPage).toMatchObject({ total: 5, page: 1, pageSize: 2 });
+    expect(firstPage.entries.map((entry) => entry.placeName)).toEqual(['Entrée 4', 'Entrée 3']);
+    expect(secondPage.entries.map((entry) => entry.placeName)).toEqual(['Entrée 2', 'Entrée 1']);
+    expect(lastPage.entries.map((entry) => entry.placeName)).toEqual(['Entrée 0']);
+  });
+
+  it('never lists activity belonging to another account', async () => {
+    const { store, client } = setup();
+    client.state.tables.activity_log.push(activityRow({ id: 'other-log', user_id: 'someone-else' }));
+    await store.signIn(account.email, account.password);
+
+    expect(await store.listActivityLog()).toEqual({ entries: [], total: 0, page: 1, pageSize: 50 });
+  });
+
+  it('fails loudly when reading the log while signed out', async () => {
+    const { store } = setup();
+    await expect(store.listActivityLog()).rejects.toThrow(/authentification/i);
+  });
+});
+
+describe('getQuotaUsage', () => {
+  function currentMonth() {
+    const now = new Date();
+    return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
+  }
+
+  it('reports zero usage against the default limit when nothing has been recorded', async () => {
+    const { store } = setup();
+    await store.signIn(account.email, account.password);
+
+    expect(await store.getQuotaUsage()).toEqual({ places: 0, maps: 0, total: 0, monthlyLimit: 1000 });
+  });
+
+  it('reads Places/Maps usage and the account monthly limit for the current month', async () => {
+    const { store, client } = setup();
+    client.state.tables.quota.push({ user_id: account.id, month: currentMonth(), places_count: 7, maps_count: 3 });
+    client.state.tables.settings.push({ user_id: account.id, monthly_quota_limit: 250 });
+    await store.signIn(account.email, account.password);
+
+    expect(await store.getQuotaUsage()).toEqual({ places: 7, maps: 3, total: 10, monthlyLimit: 250 });
+  });
+
+  it('ignores a previous month’s usage row', async () => {
+    const { store, client } = setup();
+    client.state.tables.quota.push({ user_id: account.id, month: '2020-01', places_count: 99, maps_count: 99 });
+    await store.signIn(account.email, account.password);
+
+    expect(await store.getQuotaUsage()).toMatchObject({ places: 0, maps: 0, total: 0 });
+  });
+
+  it('never reads another account’s quota or settings', async () => {
+    const { store, client } = setup();
+    client.state.tables.quota.push({ user_id: 'someone-else', month: currentMonth(), places_count: 42, maps_count: 0 });
+    client.state.tables.settings.push({ user_id: 'someone-else', monthly_quota_limit: 5 });
+    await store.signIn(account.email, account.password);
+
+    expect(await store.getQuotaUsage()).toEqual({ places: 0, maps: 0, total: 0, monthlyLimit: 1000 });
+  });
+
+  it('fails loudly when reading quota usage while signed out', async () => {
+    const { store } = setup();
+    await expect(store.getQuotaUsage()).rejects.toThrow(/authentification/i);
+  });
+});
