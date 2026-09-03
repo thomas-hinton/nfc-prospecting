@@ -11,3 +11,7 @@ Default label vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, `read
 ### Domain docs
 
 Single-context layout: `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+
+### Manual verification handoff
+
+When `/implement` finishes an issue but one or more acceptance criteria require human access (credentials, external dashboards, hardware, billing-enabled services, interactive browser checks), don't close the issue: hand it off per `docs/agents/manual-verification.md`.
