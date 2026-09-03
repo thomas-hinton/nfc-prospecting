@@ -199,6 +199,200 @@ describe('établissements', () => {
   });
 });
 
+describe('settings', () => {
+  it('reports the default sale price before any settings row exists', async () => {
+    const { store } = setup();
+    await store.signIn(account.email, account.password);
+    expect(await store.getSettings()).toEqual({ salePrice: 50 });
+  });
+
+  it('reads back a saved sale price', async () => {
+    const { store } = setup();
+    await store.signIn(account.email, account.password);
+
+    await store.saveSettings({ salePrice: 120 });
+
+    expect(await store.getSettings()).toEqual({ salePrice: 120 });
+  });
+
+  it('overwrites a previously saved sale price rather than creating a second row', async () => {
+    const { store, client } = setup();
+    await store.signIn(account.email, account.password);
+
+    await store.saveSettings({ salePrice: 120 });
+    await store.saveSettings({ salePrice: 80 });
+
+    expect(client.state.tables.settings).toHaveLength(1);
+    expect(await store.getSettings()).toEqual({ salePrice: 80 });
+  });
+
+  it('never reads another account’s settings', async () => {
+    const { store, client } = setup();
+    client.state.tables.settings.push({ user_id: 'someone-else', sale_price: 999 });
+    await store.signIn(account.email, account.password);
+
+    expect(await store.getSettings()).toEqual({ salePrice: 50 });
+  });
+});
+
+describe('statut & montant de vente', () => {
+  const boulangerie = {
+    placeId: 'place-123',
+    name: 'Boulangerie du Port',
+    address: '12 quai du Port, 83270 Saint-Cyr-sur-Mer',
+    lat: 43.1808,
+    lng: 5.7115,
+    types: ['bakery', 'food'],
+  };
+
+  async function addBoulangerie(store) {
+    const { place } = await store.upsertPlace(boulangerie);
+    return place;
+  }
+
+  it('changes an établissement’s statut and appends a matching activity_log entry', async () => {
+    const { store, client } = setup();
+    await store.signIn(account.email, account.password);
+    const place = await addBoulangerie(store);
+
+    const updated = await store.setStatus(place.id, 'scheduled');
+
+    expect(updated.status).toBe('scheduled');
+    const [placeRow] = client.state.tables.places;
+    expect(placeRow.status).toBe('scheduled');
+
+    const entries = client.state.tables.activity_log;
+    expect(entries).toHaveLength(2); // place_added, then the statut change
+    expect(entries[1]).toMatchObject({ action: 'status_changed', place_name: boulangerie.name, user_id: account.id });
+    expect(entries[1].details).toMatch(/à visiter/i);
+    expect(entries[1].details).toMatch(/programmé pour visite/i);
+  });
+
+  it('defaults the sale amount to the configured sale price when marking vendu without an explicit amount', async () => {
+    const { store } = setup();
+    await store.signIn(account.email, account.password);
+    await store.saveSettings({ salePrice: 75 });
+    const place = await addBoulangerie(store);
+
+    const updated = await store.setStatus(place.id, 'sold');
+
+    expect(updated.status).toBe('sold');
+    expect(updated.saleAmount).toBe(75);
+  });
+
+  it('uses an explicit sale amount instead of the configured sale price when marking vendu', async () => {
+    const { store } = setup();
+    await store.signIn(account.email, account.password);
+    await store.saveSettings({ salePrice: 75 });
+    const place = await addBoulangerie(store);
+
+    const updated = await store.setStatus(place.id, 'sold', { saleAmount: 250 });
+
+    expect(updated.saleAmount).toBe(250);
+  });
+
+  it('records the sale amount in the activity_log entry when marking vendu', async () => {
+    const { store, client } = setup();
+    await store.signIn(account.email, account.password);
+    const place = await addBoulangerie(store);
+
+    await store.setStatus(place.id, 'sold', { saleAmount: 250 });
+
+    const entries = client.state.tables.activity_log;
+    expect(entries.at(-1).details).toMatch(/250/);
+  });
+
+  it('edits the sale amount on an already-vendu établissement without touching its statut', async () => {
+    const { store, client } = setup();
+    await store.signIn(account.email, account.password);
+    const place = await addBoulangerie(store);
+    await store.setStatus(place.id, 'sold', { saleAmount: 100 });
+
+    const updated = await store.setSaleAmount(place.id, 180);
+
+    expect(updated.status).toBe('sold');
+    expect(updated.saleAmount).toBe(180);
+    const [placeRow] = client.state.tables.places;
+    expect(placeRow.status).toBe('sold');
+  });
+
+  it('appends a distinct "sale amount changed" entry, not a statut-change entry, when only the amount changes', async () => {
+    const { store, client } = setup();
+    await store.signIn(account.email, account.password);
+    const place = await addBoulangerie(store);
+    await store.setStatus(place.id, 'sold', { saleAmount: 100 });
+
+    await store.setSaleAmount(place.id, 180);
+
+    const entries = client.state.tables.activity_log;
+    expect(entries).toHaveLength(3); // place_added, status_changed (sold), sale_amount_changed
+    expect(entries.at(-1)).toMatchObject({ action: 'sale_amount_changed', place_name: boulangerie.name });
+    expect(entries.at(-1).details).toMatch(/180/);
+  });
+
+  it('refuses to edit the sale amount on an établissement that isn’t vendu', async () => {
+    const { store } = setup();
+    await store.signIn(account.email, account.password);
+    const place = await addBoulangerie(store);
+
+    await expect(store.setSaleAmount(place.id, 180)).rejects.toThrow(/vendu/i);
+  });
+
+  it('reopens a terminal statut back to à visiter, clearing the sale amount', async () => {
+    const { store, client } = setup();
+    await store.signIn(account.email, account.password);
+    const place = await addBoulangerie(store);
+    await store.setStatus(place.id, 'sold', { saleAmount: 250 });
+
+    const updated = await store.setStatus(place.id, 'to_visit');
+
+    expect(updated.status).toBe('to_visit');
+    expect(updated.saleAmount).toBeNull();
+    const [placeRow] = client.state.tables.places;
+    expect(placeRow.sale_amount).toBeNull();
+
+    const entries = client.state.tables.activity_log;
+    expect(entries.at(-1)).toMatchObject({ action: 'status_changed' });
+    expect(entries.at(-1).details).toMatch(/vendu/i);
+    expect(entries.at(-1).details).toMatch(/à visiter/i);
+  });
+
+  it('reopens refusé and non conforme back to à visiter the same way', async () => {
+    const { store } = setup();
+    await store.signIn(account.email, account.password);
+    const place = await addBoulangerie(store);
+    await store.setStatus(place.id, 'refused');
+
+    const updated = await store.setStatus(place.id, 'to_visit');
+
+    expect(updated.status).toBe('to_visit');
+    expect(updated.saleAmount).toBeNull();
+  });
+
+  it('is a no-op that appends nothing when the statut is set to its current value', async () => {
+    const { store, client } = setup();
+    await store.signIn(account.email, account.password);
+    const place = await addBoulangerie(store);
+
+    await store.setStatus(place.id, 'to_visit');
+
+    expect(client.state.tables.activity_log).toHaveLength(1); // just place_added
+  });
+
+  it('rejects an unknown statut', async () => {
+    const { store } = setup();
+    await store.signIn(account.email, account.password);
+    const place = await addBoulangerie(store);
+
+    await expect(store.setStatus(place.id, 'lost')).rejects.toThrow(/statut/i);
+  });
+
+  it('fails loudly when changing statut while signed out', async () => {
+    const { store } = setup();
+    await expect(store.setStatus('place-row-id', 'sold')).rejects.toThrow(/authentification/i);
+  });
+});
+
 describe('listActivityLog', () => {
   function activityRow(overrides = {}) {
     return {

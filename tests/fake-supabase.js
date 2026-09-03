@@ -17,8 +17,8 @@ function rowDefaults(table) {
  * A tiny stand-in for the PostgREST query builder the store chains off `client.from()`.
  * Only the operations `src/store.js` actually uses are implemented: `select`/`eq`/`order`/
  * `range` (with `maybeSingle` as a terminal, and `select(*, { count: 'exact' })` reporting
- * the filtered-but-unpaginated row count), and `insert`/`upsert` optionally followed by
- * `select()` to return the affected rows.
+ * the filtered-but-unpaginated row count), and `insert`/`upsert`/`update` optionally
+ * followed by `select()` to return the affected rows.
  */
 function createTableQuery(table, state) {
   let op = { type: 'select' };
@@ -81,6 +81,12 @@ function createTableQuery(table, state) {
       return { data: wantsSelectBack ? [created] : null, error: null };
     }
 
+    if (op.type === 'update') {
+      const targets = applyFilters(rows());
+      targets.forEach((row) => Object.assign(row, op.patch));
+      return { data: wantsSelectBack ? targets : null, error: null };
+    }
+
     return { data: null, error: { message: `unsupported operation: ${op.type}` } };
   }
 
@@ -108,6 +114,10 @@ function createTableQuery(table, state) {
     },
     upsert(row, options = {}) {
       op = { type: 'upsert', row, options };
+      return query;
+    },
+    update(patch) {
+      op = { type: 'update', patch };
       return query;
     },
     async maybeSingle() {
