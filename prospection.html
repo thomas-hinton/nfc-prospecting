@@ -34,6 +34,13 @@
           <p id="search-message" class="form-message" aria-live="polite"></p>
         </form>
 
+        <div class="search-form">
+          <label>Balayer la zone affichée</label>
+          <p class="search-hint">Découvre en une fois tous les établissements de la zone visible sur la carte.</p>
+          <button id="scan-button" class="secondary" type="button">Balayer la zone</button>
+          <p id="scan-message" class="form-message" aria-live="polite"></p>
+        </div>
+
         <section id="results-section" class="filters hidden">
           <div class="section-title"><h2>Résultats</h2></div>
           <div id="search-results" class="place-list" aria-live="polite"></div>
@@ -47,6 +54,7 @@
 
       <main class="map-panel">
         <div id="map"></div>
+        <p id="map-count" class="map-count"></p>
         <div id="map-placeholder" class="map-placeholder">
           <div>
             <span class="placeholder-pin">⌖</span>

@@ -8,8 +8,11 @@ import { readConfig } from './supabase-client.js';
  */
 
 const STATUS_COLORS = { to_visit: '#55a7e8', scheduled: '#e5b72b', sold: '#22a06b', refused: '#e5484d', non_compliant: '#a1a9b7' };
+const STATUS_ORDER = ['to_visit', 'scheduled', 'sold', 'refused', 'non_compliant'];
 const DEFAULT_CENTER = { lat: 43.1808, lng: 5.7115 };
 const QUOTA_MESSAGE = 'Limite mensuelle de requêtes Google atteinte.';
+const MAX_ZONE_REQUESTS = 100;
+const MAX_VISIBLE_MARKERS = 250;
 
 const $ = (selector) => document.querySelector(selector);
 const escapeHtml = (text = '') =>
@@ -48,8 +51,8 @@ function setFormMessage(id, text, isError = false) {
 class QuotaExceededError extends Error {}
 
 /** Consumes one unit of Google API quota, or throws QuotaExceededError when blocked. */
-async function requireQuota(api) {
-  const quota = await store.checkAndConsumeQuota({ api });
+async function requireQuota(api, storeInstance = store) {
+  const quota = await storeInstance.checkAndConsumeQuota({ api });
   if (!quota.allowed) throw new QuotaExceededError(QUOTA_MESSAGE);
   return quota;
 }
@@ -88,12 +91,75 @@ function renderPlaceList() {
   });
 }
 
+/** A stable, order-independent hash of a placeId, used to pick a deterministic sample within a bucket. */
+function stableHash(value) {
+  let hash = 0;
+  for (let index = 0; index < value.length; index++) hash = ((hash << 5) - hash + value.charCodeAt(index)) | 0;
+  return hash >>> 0;
+}
+
+/** Picks up to `limit` places spread evenly across `bounds`, so a dense area doesn't crowd out sparser ones. */
+function spatialSample(places, limit, bounds) {
+  if (places.length <= limit) return places;
+  const ne = bounds.getNorthEast();
+  const sw = bounds.getSouthWest();
+  const aspect = Math.max(0.5, Math.min(2, (ne.lng() - sw.lng()) / Math.max(0.0001, ne.lat() - sw.lat())));
+  const rows = Math.max(3, Math.round(Math.sqrt(Math.min(limit, places.length) / aspect)));
+  const cols = Math.max(3, Math.round(rows * aspect));
+  const buckets = Array.from({ length: rows * cols }, () => []);
+  places.forEach((place) => {
+    const row = Math.min(rows - 1, Math.max(0, Math.floor(((place.lat - sw.lat()) / (ne.lat() - sw.lat())) * rows)));
+    const col = Math.min(cols - 1, Math.max(0, Math.floor(((place.lng - sw.lng()) / (ne.lng() - sw.lng())) * cols)));
+    buckets[row * cols + col].push(place);
+  });
+  buckets.forEach((bucket) => bucket.sort((a, b) => stableHash(a.placeId) - stableHash(b.placeId)));
+  const selected = [];
+  for (let level = 0; selected.length < limit; level++) {
+    let addedAny = false;
+    for (const bucket of buckets) {
+      if (bucket[level]) {
+        selected.push(bucket[level]);
+        addedAny = true;
+      }
+      if (selected.length === limit) break;
+    }
+    if (!addedAny) break;
+  }
+  return selected;
+}
+
+/** Caps the markers drawn on the map at MAX_VISIBLE_MARKERS, sampling each statut bucket separately so a scan of a dense zone doesn't drown out other statuts, and always keeping the selected marker visible. */
+function chooseVisibleMarkers(places, bounds) {
+  if (places.length <= MAX_VISIBLE_MARKERS || !bounds) return places;
+  let remaining = MAX_VISIBLE_MARKERS;
+  let result = [];
+  for (const status of STATUS_ORDER) {
+    if (!remaining) break;
+    const group = places.filter((place) => place.status === status);
+    const selected = group.find((place) => place.placeId === state.selectedId);
+    const sample = spatialSample(group, remaining, bounds);
+    if (selected && !sample.some((place) => place.placeId === selected.placeId)) {
+      sample.pop();
+      sample.unshift(selected);
+    }
+    result = result.concat(sample);
+    remaining -= sample.length;
+  }
+  return result;
+}
+
 function renderMarkers() {
   if (!state.map || !window.google) return;
   state.markers.forEach((marker) => marker.setMap(null));
   state.markers.clear();
-  state.places.forEach((place) => {
-    if (place.lat == null || place.lng == null) return;
+  const bounds = state.map.getBounds();
+  const inFrame = bounds
+    ? state.places.filter((place) => place.lat != null && place.lng != null && bounds.contains({ lat: place.lat, lng: place.lng }))
+    : state.places.filter((place) => place.lat != null && place.lng != null);
+  const displayed = chooseVisibleMarkers(inFrame, bounds);
+  const countEl = $('#map-count');
+  if (countEl) countEl.textContent = inFrame.length ? `${displayed.length} affiché${displayed.length > 1 ? 's' : ''} sur ${inFrame.length} dans la zone` : '';
+  displayed.forEach((place) => {
     const marker = new google.maps.Marker({
       position: { lat: place.lat, lng: place.lng },
       map: state.map,
@@ -267,6 +333,126 @@ async function onCenterSubmit(event) {
   });
 }
 
+/**
+ * Splits the visible map `bounds` into a grid of square cells to scan individually — even a
+ * small zone is cut into at least 3×3, since Google caps the results of a single dense-area
+ * request and a lone call could hide neighboring businesses. Capped at MAX_ZONE_REQUESTS
+ * cells total regardless of zone size, matching the per-scan Places request budget.
+ */
+export function zoneCells(bounds) {
+  const ne = bounds.getNorthEast();
+  const sw = bounds.getSouthWest();
+  const centerLat = (ne.lat() + sw.lat()) / 2;
+  const latSpan = ne.lat() - sw.lat();
+  const lngSpan = ne.lng() - sw.lng();
+  const latMeters = latSpan * 111320;
+  const lngMeters = lngSpan * 111320 * Math.cos((centerLat * Math.PI) / 180);
+  const cellSide = 1200;
+  const rows = Math.max(3, Math.min(10, Math.ceil(latMeters / cellSide)));
+  const cols = Math.max(3, Math.min(10, Math.ceil(lngMeters / cellSide)));
+  const total = Math.min(MAX_ZONE_REQUESTS, rows * cols);
+  const cells = [];
+  for (let row = 0; row < rows && cells.length < total; row++) {
+    for (let col = 0; col < cols && cells.length < total; col++) {
+      const lat = sw.lat() + (latSpan * (row + 0.5)) / rows;
+      const lng = sw.lng() + (lngSpan * (col + 0.5)) / cols;
+      const halfLat = latMeters / rows / 2;
+      const halfLng = lngMeters / cols / 2;
+      cells.push({ center: { lat, lng }, radius: Math.max(50, Math.sqrt(halfLat ** 2 + halfLng ** 2) * 1.12) });
+    }
+  }
+  return cells;
+}
+
+/** Scans `cells` one at a time via `requireQuota`+`searchCell`, adding every newly discovered établissement through `store.upsertPlace` — the same write path a manual search-and-add uses, so a rediscovered établissement is never duplicated. Stops issuing further requests the moment quota is exhausted, without throwing. */
+export async function runZoneScan({ cells, store, searchCell, onCellStart, onPlaceAdded } = {}) {
+  let added = 0;
+  let cellsProcessed = 0;
+  let quotaExhausted = false;
+
+  for (const cell of cells) {
+    try {
+      await requireQuota('places', store);
+    } catch (error) {
+      if (!(error instanceof QuotaExceededError)) throw error;
+      quotaExhausted = true;
+      break;
+    }
+    cellsProcessed += 1;
+    onCellStart?.({ cellsProcessed, cellsTotal: cells.length, added });
+
+    const candidates = (await searchCell(cell)) || [];
+    for (const candidate of candidates) {
+      if (!candidate.id) continue;
+      const { place, created } = await store.upsertPlace({
+        placeId: candidate.id,
+        name: candidate.displayName || 'Établissement Google',
+        address: candidate.formattedAddress || '',
+        lat: candidate.location?.lat?.() ?? null,
+        lng: candidate.location?.lng?.() ?? null,
+        types: candidate.types || [],
+      });
+      if (created) {
+        added += 1;
+        onPlaceAdded?.(place);
+      }
+    }
+  }
+
+  return { added, cellsProcessed, cellsTotal: cells.length, quotaExhausted };
+}
+
+/** "3 nouvelles fiches ajoutées" / "1 nouvelle fiche ajoutée" / "aucune nouvelle fiche" — French plural agreement for the scan's running add count. */
+function addedFichesLabel(count) {
+  if (!count) return 'aucune nouvelle fiche';
+  return `${count} nouvelle${count > 1 ? 's' : ''} fiche${count > 1 ? 's' : ''} ajoutée${count > 1 ? 's' : ''}`;
+}
+
+async function onScanZone() {
+  if (!window.google?.maps?.places?.Place || !state.map?.getBounds()) {
+    setFormMessage('#scan-message', 'La carte n’est pas encore chargée.', true);
+    return;
+  }
+  const cells = zoneCells(state.map.getBounds());
+  let addedSoFar = 0;
+  await withBusyButton($('#scan-button'), 'Balayage…', async () => {
+    setFormMessage('#scan-message', 'Préparation du balayage de la zone…');
+    try {
+      const result = await runZoneScan({
+        cells,
+        store,
+        searchCell: async (cell) => {
+          const { places = [] } = await google.maps.places.Place.searchNearby({
+            fields: ['id', 'displayName', 'formattedAddress', 'location', 'types'],
+            locationRestriction: { center: cell.center, radius: cell.radius },
+            maxResultCount: 20,
+          });
+          return places;
+        },
+        onCellStart: ({ cellsProcessed, cellsTotal, added }) => {
+          setFormMessage('#scan-message', `Balayage de la zone… ${cellsProcessed} / ${cellsTotal} · ${addedFichesLabel(added)}.`);
+        },
+        onPlaceAdded: (place) => {
+          addedSoFar += 1;
+          state.places = [place, ...state.places];
+          renderPlaceList();
+          renderMarkers();
+        },
+      });
+
+      if (result.quotaExhausted) {
+        setFormMessage('#scan-message', `${QUOTA_MESSAGE} ${addedFichesLabel(result.added)} avant l’arrêt.`, true);
+      } else {
+        setFormMessage('#scan-message', `Balayage terminé : ${addedFichesLabel(result.added)}.`);
+      }
+    } catch (error) {
+      console.error(error);
+      const progress = addedSoFar ? ` ${addedFichesLabel(addedSoFar)} avant l’échec.` : '';
+      setFormMessage('#scan-message', `Google a refusé le balayage.${progress} Réessaie dans un instant.`, true);
+    }
+  });
+}
+
 function loadGoogleMapsScript(apiKey) {
   if (window.google?.maps) return Promise.resolve();
   return new Promise((resolve, reject) => {
@@ -322,11 +508,13 @@ async function start() {
     $('#map-placeholder-text').textContent = 'Clé Google Maps manquante pour ce déploiement.';
     $('#search-button').disabled = true;
     $('#center-button').disabled = true;
+    $('#scan-button').disabled = true;
     return;
   }
 
   $('#search-form').addEventListener('submit', onSearchSubmit);
   $('#city-form').addEventListener('submit', onCenterSubmit);
+  $('#scan-button').addEventListener('click', onScanZone);
 
   state.places = await store.listPlaces().catch((error) => {
     console.error(error);
