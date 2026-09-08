@@ -1,5 +1,6 @@
 import { bootstrapStore } from './bootstrap.js';
 import { readConfig } from './supabase-client.js';
+import { STATUS_LABELS, euros } from './store.js';
 
 /**
  * The Prospection page: text search for a business, add it to the tracked list, see it on
@@ -9,6 +10,7 @@ import { readConfig } from './supabase-client.js';
 
 const STATUS_COLORS = { to_visit: '#55a7e8', scheduled: '#e5b72b', sold: '#22a06b', refused: '#e5484d', non_compliant: '#a1a9b7' };
 const STATUS_ORDER = ['to_visit', 'scheduled', 'sold', 'refused', 'non_compliant'];
+const TERMINAL_STATUSES = new Set(['sold', 'refused', 'non_compliant']);
 const DEFAULT_CENTER = { lat: 43.1808, lng: 5.7115 };
 const QUOTA_MESSAGE = 'Limite mensuelle de requêtes Google atteinte.';
 const MAX_ZONE_REQUESTS = 100;
@@ -183,16 +185,67 @@ function selectPlace(placeId, pan = false) {
   renderDetail(place);
 }
 
+/** Replaces `updated` in state.places, and re-renders whatever's currently showing it. */
+function applyPlaceUpdate(updated) {
+  state.places = state.places.map((place) => (place.id === updated.id ? updated : place));
+  renderPlaceList();
+  renderMarkers();
+  if (state.selectedId === updated.placeId) renderDetail(updated);
+}
+
+async function onStatusChange(place, status) {
+  if (status === place.status) return;
+  const reopening = TERMINAL_STATUSES.has(place.status) && status === 'to_visit';
+  if (reopening) {
+    const warning = place.status === 'sold' ? '\n\nSon montant de vente sera supprimé.' : '';
+    if (!window.confirm(`Remettre « ${place.name} » au statut « À visiter » ?${warning}`)) return;
+  }
+  try {
+    applyPlaceUpdate(await store.setStatus(place.id, status));
+  } catch (error) {
+    console.error(error);
+    window.alert('Impossible de mettre à jour le statut. Réessaie dans un instant.');
+  }
+}
+
+async function onEditSaleAmount(place) {
+  const entry = window.prompt('Montant de la vente en euros (0 autorisé) :', String(Number(place.saleAmount || 0)).replace('.', ','));
+  if (entry === null) return;
+  const amount = Number(entry.trim().replace(',', '.'));
+  if (!Number.isFinite(amount) || amount < 0) {
+    window.alert('Indique un montant positif ou 0.');
+    return;
+  }
+  try {
+    applyPlaceUpdate(await store.setSaleAmount(place.id, amount));
+  } catch (error) {
+    console.error(error);
+    window.alert('Impossible de mettre à jour le montant de la vente. Réessaie dans un instant.');
+  }
+}
+
 function renderDetail(place) {
   const card = $('#detail-card');
   card.classList.remove('hidden');
-  card.innerHTML = `<button class="close-detail" type="button" aria-label="Fermer">×</button><h2>${escapeHtml(place.name)}</h2><p>${escapeHtml(place.address)}</p><div class="place-type">${escapeHtml(placeType(place).replaceAll('_', ' '))}</div><div class="link-actions"><button data-action="copy" type="button">Copier le lien NFC</button><button data-action="open" type="button">Ouvrir la fiche Google</button></div><code class="place-id">Place ID : ${escapeHtml(place.placeId)}</code>`;
+  const saleBlock =
+    place.status === 'sold'
+      ? `<div class="sale-value">Vente : ${euros(place.saleAmount)} <button class="edit-sale" type="button" aria-label="Modifier le montant de la vente" title="Modifier le montant">✎</button></div>`
+      : '';
+  const statusButtons = STATUS_ORDER.map(
+    (status) =>
+      `<button data-status="${status}" type="button" class="${place.status === status ? 'selected-' + status : ''}">${STATUS_LABELS[status]}</button>`
+  ).join('');
+  card.innerHTML = `<button class="close-detail" type="button" aria-label="Fermer">×</button><h2>${escapeHtml(place.name)}</h2><p>${escapeHtml(place.address)}</p><div class="place-type">${escapeHtml(placeType(place).replaceAll('_', ' '))}</div>${saleBlock}<div class="status-select">${statusButtons}</div><div class="link-actions"><button data-action="copy" type="button">Copier le lien NFC</button><button data-action="open" type="button">Ouvrir la fiche Google</button></div><code class="place-id">Place ID : ${escapeHtml(place.placeId)}</code>`;
 
   card.querySelector('.close-detail').onclick = () => {
     state.selectedId = null;
     card.classList.add('hidden');
     renderMarkers();
   };
+  card.querySelectorAll('[data-status]').forEach((button) => {
+    button.onclick = () => onStatusChange(place, button.dataset.status);
+  });
+  card.querySelector('.edit-sale')?.addEventListener('click', () => onEditSaleAmount(place));
   card.querySelector('[data-action="copy"]').onclick = async (event) => {
     try {
       await navigator.clipboard.writeText(mapsUrl(place));

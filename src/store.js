@@ -8,9 +8,24 @@
  */
 
 const DEFAULT_MONTHLY_LIMIT = 1000;
+const DEFAULT_SALE_PRICE = 50;
+
+/** The commercial pipeline stages' French display labels, keyed by statut. Terminal statuts (sold, refused, non_compliant) can be reopened back to to_visit. Shared with the UI so the two never drift. */
+export const STATUS_LABELS = {
+  to_visit: 'À visiter',
+  scheduled: 'Programmé pour visite',
+  sold: 'Vendu',
+  refused: 'Refusé',
+  non_compliant: 'Non conforme',
+};
 
 function throwStoreError(error, fallback) {
   throw new Error(error?.message || fallback);
+}
+
+/** Formats a euro amount the way every activity_log detail and the UI display it. */
+export function euros(amount) {
+  return Number(amount || 0).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' });
 }
 
 /** Converts a `places` row (snake_case, as stored) to the établissement shape callers use. */
@@ -58,6 +73,20 @@ export function createStore({ client }) {
     const userId = data?.session?.user?.id;
     if (!userId) throwStoreError(null, 'Authentification requise.');
     return userId;
+  }
+
+  /** The current account's place row (raw, snake_case), by its database id. Throws if it doesn't exist or belongs to someone else. */
+  async function findPlaceRow(userId, id) {
+    const { data, error } = await client.from('places').select('*').eq('user_id', userId).eq('id', id).maybeSingle();
+    if (error) throwStoreError(error, "Impossible de lire l'établissement.");
+    if (!data) throw new Error('Établissement introuvable.');
+    return data;
+  }
+
+  async function readSalePrice(userId) {
+    const { data, error } = await client.from('settings').select('*').eq('user_id', userId).maybeSingle();
+    if (error) throwStoreError(error, 'Impossible de lire les paramètres.');
+    return data?.sale_price ?? DEFAULT_SALE_PRICE;
   }
 
   return {
@@ -165,6 +194,109 @@ export function createStore({ client }) {
         .maybeSingle();
       if (fetchError) throwStoreError(fetchError, "Impossible de lire l'établissement existant.");
       return { place: mapPlaceRow(existing), created: false };
+    },
+
+    /**
+     * Moves an établissement through the commercial pipeline. A no-op (no write, no
+     * activity_log entry) when `status` matches the établissement's current statut.
+     *
+     * Marking vendu without an explicit `saleAmount` defaults to the configured sale
+     * price (see getSettings). Moving away from vendu — including reopening a terminal
+     * statut back to à visiter — always clears the sale amount. Every real change
+     * appends one activity_log entry describing the transition, including the sale
+     * amount when the new statut is vendu.
+     *
+     * @param {string} id - The établissement's database id (place.id).
+     * @param {string} status
+     * @param {{ saleAmount?: number }} [options]
+     * @returns {Promise<object>}
+     */
+    async setStatus(id, status, { saleAmount } = {}) {
+      if (!STATUS_LABELS[status]) throw new Error(`Statut inconnu : ${status}`);
+      const userId = await currentUserId();
+      const current = await findPlaceRow(userId, id);
+      const previousStatus = current.status;
+      if (previousStatus === status) return mapPlaceRow(current);
+
+      const nextSaleAmount =
+        status === 'sold' ? Math.round((saleAmount != null ? saleAmount : await readSalePrice(userId)) * 100) / 100 : null;
+      const now = new Date().toISOString();
+
+      const { data: updated, error } = await client
+        .from('places')
+        .update({ status, sale_amount: nextSaleAmount, status_changed_at: now, updated_at: now })
+        .eq('user_id', userId)
+        .eq('id', id)
+        .select();
+      if (error) throwStoreError(error, 'Impossible de mettre à jour le statut.');
+      const row = (Array.isArray(updated) ? updated[0] : updated) ?? { ...current, status, sale_amount: nextSaleAmount };
+
+      let details = `Statut : ${STATUS_LABELS[previousStatus]} → ${STATUS_LABELS[status]}.`;
+      if (status === 'sold') details += ` Montant de vente : ${euros(nextSaleAmount)}.`;
+      const { error: logError } = await client.from('activity_log').insert({
+        user_id: userId,
+        action: 'status_changed',
+        place_name: row.name,
+        address: row.address,
+        details,
+      });
+      if (logError) throwStoreError(logError, "Impossible d'enregistrer l'historique.");
+
+      return mapPlaceRow(row);
+    },
+
+    /**
+     * Edits the sale amount of an already-vendu établissement without changing its
+     * statut. Appends a distinct "sale amount changed" activity_log entry.
+     *
+     * @param {string} id - The établissement's database id (place.id).
+     * @param {number} saleAmount
+     * @returns {Promise<object>}
+     */
+    async setSaleAmount(id, saleAmount) {
+      if (!Number.isFinite(saleAmount) || saleAmount < 0) throw new Error('Montant de vente invalide.');
+      const userId = await currentUserId();
+      const current = await findPlaceRow(userId, id);
+      if (current.status !== 'sold') throw new Error("Cet établissement n'est pas vendu.");
+      const previousSaleAmount = current.sale_amount;
+      saleAmount = Math.round(saleAmount * 100) / 100;
+
+      const now = new Date().toISOString();
+      const { data: updated, error } = await client
+        .from('places')
+        .update({ sale_amount: saleAmount, updated_at: now })
+        .eq('user_id', userId)
+        .eq('id', id)
+        .select();
+      if (error) throwStoreError(error, 'Impossible de mettre à jour le montant de la vente.');
+      const row = (Array.isArray(updated) ? updated[0] : updated) ?? { ...current, sale_amount: saleAmount };
+
+      const { error: logError } = await client.from('activity_log').insert({
+        user_id: userId,
+        action: 'sale_amount_changed',
+        place_name: row.name,
+        address: row.address,
+        details: `Montant de vente : ${euros(previousSaleAmount)} → ${euros(saleAmount)}.`,
+      });
+      if (logError) throwStoreError(logError, "Impossible d'enregistrer l'historique.");
+
+      return mapPlaceRow(row);
+    },
+
+    /** The account's configured sale price, defaulting to 50 € before any settings row exists. */
+    async getSettings() {
+      const userId = await currentUserId();
+      return { salePrice: await readSalePrice(userId) };
+    },
+
+    /** @param {{ salePrice: number }} next */
+    async saveSettings({ salePrice }) {
+      if (!Number.isFinite(salePrice) || salePrice < 0) throw new Error('Prix de vente invalide.');
+      const userId = await currentUserId();
+      const { error } = await client
+        .from('settings')
+        .upsert({ user_id: userId, sale_price: salePrice, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
+      if (error) throwStoreError(error, "Impossible d'enregistrer les paramètres.");
     },
 
     /**
