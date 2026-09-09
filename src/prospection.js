@@ -1,6 +1,7 @@
 import { bootstrapStore } from './bootstrap.js';
 import { readConfig } from './supabase-client.js';
 import { STATUS_LABELS, euros } from './store.js';
+import { placeType } from './place-fields.js';
 
 /**
  * The Prospection page: text search for a business, add it to the tracked list, see it on
@@ -19,11 +20,6 @@ const MAX_VISIBLE_MARKERS = 250;
 const $ = (selector) => document.querySelector(selector);
 const escapeHtml = (text = '') =>
   String(text).replace(/[&<>'"]/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[character]);
-
-function placeType(place) {
-  const ignored = new Set(['point_of_interest', 'establishment', 'food', 'store', 'premise']);
-  return (place.types || []).find((type) => !ignored.has(type)) || 'Autre';
-}
 
 function mapsUrl(place) {
   const query = encodeURIComponent(`${place.name} ${place.address}`.trim());

@@ -94,7 +94,7 @@ function raise(context, error) {
 }
 
 /** Every row matching `filters`, paged past PostgREST's default row cap. */
-async function fetchAll(client, table, filters) {
+export async function fetchAll(client, table, filters) {
   const rows = [];
   for (let offset = 0; ; offset += PAGE_SIZE) {
     let query = client.from(table).select('*');

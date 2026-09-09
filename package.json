@@ -5,6 +5,7 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "migrate": "node scripts/migrate-to-supabase.mjs",
+    "backfill:city": "node scripts/backfill-city.mjs",
     "test": "vitest run"
   },
   "dependencies": {

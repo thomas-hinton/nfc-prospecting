@@ -172,6 +172,49 @@ describe('établissements', () => {
     expect(client.state.tables.activity_log[0].details).toMatch(/à visiter/i);
   });
 
+  it('stores the commune derived from the Google address when the établissement is first tracked', async () => {
+    const { store, client } = setup();
+    await store.signIn(account.email, account.password);
+
+    const { place } = await store.upsertPlace(boulangerie);
+
+    expect(place.city).toBe('Saint-Cyr-sur-Mer');
+    expect(client.state.tables.places[0].city).toBe('Saint-Cyr-sur-Mer');
+    expect((await store.listPlaces())[0].city).toBe('Saint-Cyr-sur-Mer');
+  });
+
+  it('leaves the commune unset when the address carries none, rather than storing a placeholder', async () => {
+    const { store, client } = setup();
+    await store.signIn(account.email, account.password);
+
+    const { place } = await store.upsertPlace({ ...boulangerie, address: 'Somewhere off the map' });
+
+    expect(place.city).toBeNull();
+    expect(client.state.tables.places[0].city).toBeNull();
+  });
+
+  it('leaves the commune unset when the établissement is added with no address at all', async () => {
+    const { store } = setup();
+    await store.signIn(account.email, account.password);
+
+    const { place } = await store.upsertPlace({ placeId: 'place-no-address' });
+
+    expect(place.city).toBeNull();
+  });
+
+  it('never re-derives the commune of an already-tracked établissement, so a hand-made correction survives a re-add', async () => {
+    const { store, client } = setup();
+    await store.signIn(account.email, account.password);
+    await store.upsertPlace(boulangerie);
+    client.state.tables.places[0].city = 'Saint-Cyr';
+
+    const { place, created } = await store.upsertPlace(boulangerie);
+
+    expect(created).toBe(false);
+    expect(place.city).toBe('Saint-Cyr');
+    expect(client.state.tables.places[0].city).toBe('Saint-Cyr');
+  });
+
   it('never lists établissements belonging to another account', async () => {
     const { store, client } = setup();
     client.state.tables.places.push({

@@ -1,11 +1,11 @@
 let nextRowId = 1;
 const uid = (prefix) => `${prefix}-${nextRowId++}`;
 
-/** Column defaults per table, mirroring supabase/migrations/20260902000000_foundation.sql. */
+/** Column defaults per table, mirroring supabase/migrations/*.sql. */
 function rowDefaults(table) {
   const now = new Date().toISOString();
   if (table === 'places') {
-    return { status: 'to_visit', sale_amount: null, created_at: now, status_changed_at: now, updated_at: now };
+    return { status: 'to_visit', sale_amount: null, city: null, created_at: now, status_changed_at: now, updated_at: now };
   }
   if (table === 'activity_log') {
     return { place_name: '', address: '', details: null, at: now };

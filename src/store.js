@@ -6,6 +6,7 @@
  * management and the quota RPC; feature tickets extend it with établissement, visite,
  * activity-log and settings methods.
  */
+import { placeCity } from './place-fields.js';
 
 const DEFAULT_MONTHLY_LIMIT = 1000;
 const DEFAULT_SALE_PRICE = 50;
@@ -38,6 +39,7 @@ function mapPlaceRow(row) {
     lat: row.lat,
     lng: row.lng,
     types: row.types ?? [],
+    city: row.city ?? null,
     status: row.status,
     saleAmount: row.sale_amount ?? null,
     createdAt: row.created_at,
@@ -157,6 +159,11 @@ export function createStore({ client }) {
      * constraint) and appends no new activity-log entry — only a genuine first add does,
      * recording the établissement's initial statut (à visiter).
      *
+     * The établissement's commune is derived from `address` here and written with the row.
+     * Because a re-add is ignored rather than merged, it is derived exactly once — at the
+     * moment the établissement is first tracked — so a commune corrected by hand in the
+     * Supabase table editor is never overwritten by a later rediscovery (issue #7).
+     *
      * @param {{ placeId: string, name?: string, address?: string, lat?: number|null, lng?: number|null, types?: string[] }} place
      * @returns {Promise<{ place: object, created: boolean }>}
      */
@@ -167,7 +174,7 @@ export function createStore({ client }) {
       const { data: inserted, error } = await client
         .from('places')
         .upsert(
-          { user_id: userId, place_id: placeId, name, address, lat, lng, types },
+          { user_id: userId, place_id: placeId, name, address, lat, lng, types, city: placeCity(address) },
           { onConflict: 'user_id,place_id', ignoreDuplicates: true }
         )
         .select();

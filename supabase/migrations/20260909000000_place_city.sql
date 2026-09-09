@@ -1,0 +1,12 @@
+-- The établissement's commune, stored rather than re-derived on every render (issue #7).
+--
+-- Nullable on purpose: an address that carries no recognisable commune leaves this unset,
+-- so the database says "unknown" rather than holding a placeholder string. The Tableau de
+-- bord groups those under an explicit "sans commune" filter entry, and a correction is a
+-- hand-filled cell in the Supabase table editor — there is no in-app editor.
+--
+-- Derived from the address already stored on the row (src/place-fields.js), never from
+-- Google's structured address components, which would raise the Places billing tier on
+-- every search and every zone-scan cell. Existing rows are filled by the one-off
+-- scripts/backfill-city.mjs, which issues no Google request.
+alter table public.places add column if not exists city text;
