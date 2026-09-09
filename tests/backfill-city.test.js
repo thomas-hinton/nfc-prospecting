@@ -4,12 +4,15 @@ import { runBackfill } from '../scripts/backfill-city.mjs';
 
 const account = { email: 'prospecteur@example.com', password: 'correct-horse', id: 'user-1' };
 
+let nextRow = 0;
+
 function placeRow(overrides = {}) {
   const now = new Date().toISOString();
+  nextRow += 1;
   return {
-    id: `row-${Math.random()}`,
+    id: `row-${nextRow}`,
     user_id: account.id,
-    place_id: `place-${Math.random()}`,
+    place_id: `place-${nextRow}`,
     name: 'Boulangerie du Port',
     address: '12 quai du Port, 83270 Saint-Cyr-sur-Mer',
     lat: null,

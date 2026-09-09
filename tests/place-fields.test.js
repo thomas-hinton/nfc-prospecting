@@ -34,8 +34,28 @@ describe('placeCity', () => {
     expect(placeCity('350 5th Ave, New York, NY 10118, USA')).toBeNull();
   });
 
-  it('leaves the commune unset for a foreign address that happens to end in postcode and town', () => {
+  it('leaves the commune unset for a foreign address whose trailing country is not France', () => {
     expect(placeCity('Unter den Linden 1, 10117 Berlin, Deutschland')).toBeNull();
+  });
+
+  it('leaves the commune unset when any other segment trails the town', () => {
+    expect(placeCity('1 rue de Rivoli, 75001 Paris, Frankreich')).toBeNull();
+    expect(placeCity('1 rue de Rivoli, 75001 Paris, France, Europe')).toBeNull();
+  });
+
+  it('reads a commune out of a country-less address of French shape, foreign or not', () => {
+    // Google's formattedAddress always carries the country, so this shape is not one the
+    // app receives; pinned so the rule's real edge is visible rather than assumed.
+    expect(placeCity('Unter den Linden 1, 10117 Berlin')).toBe('Berlin');
+  });
+
+  it('is not fooled by a six-digit number whose last five digits look like a postcode', () => {
+    expect(placeCity('832701 Nice')).toBeNull();
+    expect(placeCity('8327012 Nice')).toBeNull();
+  });
+
+  it('leaves the commune unset when the postcode is not five digits long', () => {
+    expect(placeCity('X, 1234 Nice')).toBeNull();
   });
 
   it('leaves the commune unset for a missing or empty address', () => {

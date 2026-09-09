@@ -1,7 +1,7 @@
 let nextRowId = 1;
 const uid = (prefix) => `${prefix}-${nextRowId++}`;
 
-/** Column defaults per table, mirroring supabase/migrations/*.sql. */
+/** Column defaults per table, mirroring supabase/migrations/20260902000000_foundation.sql plus 20260909000000_place_city.sql. */
 function rowDefaults(table) {
   const now = new Date().toISOString();
   if (table === 'places') {

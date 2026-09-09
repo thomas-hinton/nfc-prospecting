@@ -93,7 +93,13 @@ function raise(context, error) {
   throw new Error(`${context} : ${error.message}`);
 }
 
-/** Every row matching `filters`, paged past PostgREST's default row cap. */
+/**
+ * Every row matching `filters`, paged past PostgREST's default row cap.
+ *
+ * Exported for the other hand-run admin scripts rather than for this migration's own use:
+ * scripts/backfill-city.mjs reads every établissement through it. Keep it exported even
+ * once this migration has been run.
+ */
 export async function fetchAll(client, table, filters) {
   const rows = [];
   for (let offset = 0; ; offset += PAGE_SIZE) {
@@ -152,7 +158,10 @@ async function insertMissing(client, table, existingRows, sourceRows, signatureO
   return { inserted, skipped };
 }
 
-/** The provisioned account's user id (ADR-0002: exactly one account), looked up by email. */
+/**
+ * The provisioned account's user id (ADR-0002: exactly one account), looked up by email.
+ * Shared with the other hand-run admin scripts (scripts/backfill-city.mjs).
+ */
 export async function resolveUserId(adminAuth, email) {
   for (let page = 1; ; page += 1) {
     const { data, error } = await adminAuth.admin.listUsers({ page, perPage: 200 });
