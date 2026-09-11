@@ -86,6 +86,17 @@ gh issue edit <n> --remove-label "ready-for-human" --add-label "ready-for-agent"
 gh issue comment <n> --body "..."
 ```
 
+## Done when
+
+The handoff is correctly executed when all of the following are observable from the issue itself, without reading the session transcript:
+
+- [ ] The issue is **open** and labeled `ready-for-human`, with `ready-for-agent` removed and every other label untouched.
+- [ ] The issue body contains **exactly one** `## Manual verification required` section, with every check split into **Check** / **Expected**.
+- [ ] A separate handoff comment exists, summarizing what was automated and naming what is left for the human.
+- [ ] No credential value appears anywhere in the body or comments.
+
+Closing the issue is **not** part of this criterion: it is a separate, explicitly authorized human action (see [agent-control.md](../agent-control.md)).
+
 ## Example
 
 Issue [#4](https://github.com/thomas-hinton/nfc-prospecting/issues/4), "Text search & add + Google Maps/NFC link workflow," is a concrete case: the search/add/marker/dedup logic and its unit tests (against an in-memory fake) were finished and automated, but the criteria around Google Cloud API enablement and key restriction, the Netlify build-time environment variable, and the live Supabase rows can only be confirmed against real external services. The issue carries `ready-for-human`, stays open, and its body ends with a `## Manual verification required` section broken into prerequisite-free numbered groups (Google Cloud, Netlify, browser flow, Supabase read-only `select`s, and a reversible quota-limit test with an explicit, marked-required rollback step) — no credential values appear anywhere in it.
