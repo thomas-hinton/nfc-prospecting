@@ -247,9 +247,14 @@ function inBounds(place, bounds) {
 export function placesOnMap(places, bounds, selectedId = null) {
   if (!bounds) return { inFrame: [], shown: [] };
   const inFrame = places.filter((place) => inBounds(place, bounds));
-  const capped = chooseVisibleMarkers(inFrame, bounds, selectedId);
-  const selected = capped.find((place) => place.placeId === selectedId);
-  return { inFrame, shown: selected ? [selected, ...capped.filter((place) => place !== selected)] : capped };
+  const shown = chooseVisibleMarkers(inFrame, bounds, selectedId);
+  return { inFrame, shown: openFirst(shown, selectedId) };
+}
+
+/** `places` with the open établissement (`selectedId`), if among them, moved to the front. */
+function openFirst(places, selectedId) {
+  const open = places.find((place) => place.placeId === selectedId);
+  return open ? [open, ...places.filter((place) => place !== open)] : places;
 }
 
 /** Redraws the markers and the sidebar list for the current frame — a local redraw, no Supabase or Google request. */
