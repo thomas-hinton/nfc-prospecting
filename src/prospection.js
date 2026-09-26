@@ -160,14 +160,14 @@ async function loadSalePrice() {
 /** Redraws the Tableau de bord's metric cards over the filtered set (see `dashboardMetrics`). */
 function renderDashboardMetrics(filters) {
   const metrics = dashboardMetrics(state.places, { filters, salePrice: state.salePrice });
-  const card = (modifier, label, count, amount = '') =>
-    `<div class="metric ${modifier}"><span>${escapeHtml(label)}</span><strong>${count}</strong>${amount ? `<p class="metric-amount">${escapeHtml(amount)}</p>` : ''}</div>`;
+  const card = (modifier, label, count, figure = '') =>
+    `<div class="metric ${modifier}"><span>${escapeHtml(label)}</span><strong>${escapeHtml(count)}</strong>${figure ? `<p class="metric-amount">${escapeHtml(figure)}</p>` : ''}</div>`;
   // A potentiel is an estimate, not revenue: the « ≈ » sets it apart from the vendus' amount.
-  const potentiel = (amount) => (amount == null ? '—' : `≈ ${euros(amount)}`);
+  const estimate = (potentiel) => (potentiel == null ? '—' : `≈ ${euros(potentiel)}`);
   $('#dashboard-metrics').innerHTML = [
     card('sold', 'Vendus', metrics.sold, euros(metrics.revenue)),
-    card('scheduled', 'Programmés pour visite', metrics.scheduled, potentiel(metrics.potentiel.scheduled)),
-    card('visit', 'À visiter', metrics.toVisit, potentiel(metrics.potentiel.toVisit)),
+    card('scheduled', 'Programmés pour visite', metrics.scheduled, estimate(metrics.potentiel.scheduled)),
+    card('visit', 'À visiter', metrics.toVisit, estimate(metrics.potentiel.toVisit)),
     card('refused', 'Refusés', metrics.refused),
   ].join('');
 }
