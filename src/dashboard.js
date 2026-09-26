@@ -86,10 +86,10 @@ function cityOptions(places) {
  * picking it would empty the list.
  *
  * The list is never left empty by a value chosen earlier that the data has since moved out
- * from under (a statut changed, a commune corrected): whatever no longer fits is reset, the
- * commune last of all — it is what a round is planned in. A commune nothing is in any more
- * resets; a type the commune no longer has resets; a statut with nothing left under the
- * commune and type resets. The menus are drawn under the filters as they stand after that.
+ * from under (a statut changed, a commune corrected): whatever no longer fits is reset, and
+ * the commune is the last to be given up — it is what a round is planned in. Only a commune
+ * nothing is in any more resets; otherwise a type the commune no longer has resets, then a
+ * statut with nothing left under the commune and type. The menus are drawn under the filters as they stand after that.
  */
 export function filterMenus(places, { city = null, type = null, status = null } = {}) {
   const under = (filters) => places.filter((place) => matchesFilters(place, filters));
@@ -123,8 +123,8 @@ const byDate = (dateOf) => (a, b) => (Date.parse(dateOf(a)) || 0) - (Date.parse(
 /**
  * The Tableau de bord's sorts, each an ascending comparator over two établissements. Name,
  * commune and type are French-collated — accents and case ignored, "Atelier 9" before
- * "Atelier 10", a type as displayed; a statut follows the pipeline (à visiter, programmé pour
- * visite, vendu, refusé, non conforme); dates are chronological. An établissement with no commune sorts after every commune
+ * "Atelier 10", a type as displayed; a statut follows the pipeline, in STATUS_LABELS order;
+ * dates are chronological. An établissement with no commune sorts after every commune
  * (ascending; `sortPlaces` reverses the whole order for descending, so it then comes first).
  */
 export const SORT_COMPARATORS = {

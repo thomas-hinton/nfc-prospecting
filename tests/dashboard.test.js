@@ -103,7 +103,7 @@ describe('matchesFilters', () => {
     expect(kept({ city: NO_CITY })).toEqual(['c']);
   });
 
-  it('filters by type and by statut, each narrowing the other', () => {
+  it('filters by type and by statut, and by both at once', () => {
     expect(kept({ type: 'bakery' })).toEqual(['a', 'c']);
     expect(kept({ status: 'sold' })).toEqual(['b', 'c']);
     expect(kept({ type: 'bakery', status: 'sold' })).toEqual(['c']);
@@ -244,6 +244,12 @@ describe('sortPlaces', () => {
     expect(order({ key: 'statusChangedAt', direction: 'desc' })).toEqual(['d', 'a', 'c', 'b']);
   });
 
+  it('lists the établissements with no commune after every commune, and first when sorting descending', () => {
+    const list = [place({ placeId: 'x', city: null }), place({ placeId: 'y', city: 'Toulon' }), place({ placeId: 'z', city: 'Bandol' })];
+    expect(sortPlaces(list, { key: 'city', direction: 'asc' }).map((item) => item.placeId)).toEqual(['z', 'y', 'x']);
+    expect(sortPlaces(list, { key: 'city', direction: 'desc' }).map((item) => item.placeId)).toEqual(['x', 'y', 'z']);
+  });
+
   it('keeps établissements that tie in the order they were given', () => {
     expect(order({ key: 'city', direction: 'desc' })).toEqual(['a', 'c', 'b', 'd']);
   });
@@ -255,14 +261,22 @@ describe('sortPlaces', () => {
 });
 
 describe('SORT_COMPARATORS', () => {
-  const list = [place({ placeId: 'x', city: null }), place({ placeId: 'y', city: 'Toulon' }), place({ placeId: 'z', city: 'Bandol' })];
+  const sortedWith = (compare, list) => [...list].sort(compare).map((item) => item.placeId);
 
-  it('offers one comparator per sort of the Tableau de bord', () => {
-    expect(Object.keys(SORT_COMPARATORS).sort()).toEqual(['city', 'createdAt', 'name', 'status', 'statusChangedAt', 'type']);
+  it('puts an établissement with no commune after every commune', () => {
+    const list = [place({ placeId: 'x', city: null }), place({ placeId: 'y', city: 'Toulon' }), place({ placeId: 'z', city: 'Bandol' })];
+    expect(sortedWith(SORT_COMPARATORS.city, list)).toEqual(['z', 'y', 'x']);
   });
 
-  it('lists the établissements with no commune after every commune, and first when sorting descending', () => {
-    expect(sortPlaces(list, { key: 'city', direction: 'asc' }).map((item) => item.placeId)).toEqual(['z', 'y', 'x']);
-    expect(sortPlaces(list, { key: 'city', direction: 'desc' }).map((item) => item.placeId)).toEqual(['x', 'y', 'z']);
+  it('orders statuts along the pipeline, not alphabetically', () => {
+    const list = ['non_compliant', 'refused', 'sold', 'scheduled', 'to_visit'].map((status) => place({ placeId: status, status }));
+    expect(sortedWith(SORT_COMPARATORS.status, list)).toEqual(['to_visit', 'scheduled', 'sold', 'refused', 'non_compliant']);
+  });
+
+  it('compares names the French way and dates chronologically', () => {
+    const names = [place({ placeId: 'b', name: 'Épicerie' }), place({ placeId: 'a', name: 'boulangerie' })];
+    expect(sortedWith(SORT_COMPARATORS.name, names)).toEqual(['a', 'b']);
+    const dates = [place({ placeId: 'late', createdAt: '2026-09-10T00:00:00Z' }), place({ placeId: 'early', createdAt: '2026-09-01T00:00:00Z' })];
+    expect(sortedWith(SORT_COMPARATORS.createdAt, dates)).toEqual(['early', 'late']);
   });
 });

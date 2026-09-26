@@ -23,6 +23,11 @@ const DEFAULT_CENTER = { lat: 43.1808, lng: 5.7115 };
 const QUOTA_MESSAGE = 'Limite mensuelle de requêtes Google atteinte.';
 const MAX_ZONE_REQUESTS = 100;
 const MAX_VISIBLE_MARKERS = 250;
+/** The Tableau de bord's sort directions: the direction button's label and spoken word, and what a click switches to. */
+const SORT_DIRECTIONS = {
+  asc: { label: '↑ Croissant', word: 'croissant', next: 'desc' },
+  desc: { label: '↓ Décroissant', word: 'décroissant', next: 'asc' },
+};
 
 const $ = (selector) => document.querySelector(selector);
 const escapeHtml = (text = '') =>
@@ -162,8 +167,8 @@ function renderDashboardControls(menus) {
   const { key, direction } = state.dashboard.sort;
   $('#dashboard-sort').value = key;
   const directionButton = $('#dashboard-sort-direction');
-  directionButton.textContent = direction === 'asc' ? '↑ Croissant' : '↓ Décroissant';
-  directionButton.setAttribute('aria-label', `Ordre ${direction === 'asc' ? 'croissant' : 'décroissant'}, cliquer pour inverser`);
+  directionButton.textContent = SORT_DIRECTIONS[direction].label;
+  directionButton.setAttribute('aria-label', `Ordre ${SORT_DIRECTIONS[direction].word}, cliquer pour inverser`);
 }
 
 /** Redraws the Tableau de bord from `state.places` — only while it is the view on screen. */
@@ -723,18 +728,18 @@ async function start() {
     renderDashboard();
   });
   /** Applies a filter or sort change to the Tableau de bord and redraws it from its first page. */
-  const narrowDashboard = ({ filters = {}, sort = {} }) => {
+  const redrawDashboardFromFirstPage = ({ filters = {}, sort = {} }) => {
     state.dashboard.filters = { ...state.dashboard.filters, ...filters };
     state.dashboard.sort = { ...state.dashboard.sort, ...sort };
     state.dashboard.page = 1;
     renderDashboard();
   };
   ['city', 'type', 'status'].forEach((filter) => {
-    $(`#dashboard-${filter}`).addEventListener('change', (event) => narrowDashboard({ filters: { [filter]: event.target.value || null } }));
+    $(`#dashboard-${filter}`).addEventListener('change', (event) => redrawDashboardFromFirstPage({ filters: { [filter]: event.target.value || null } }));
   });
-  $('#dashboard-sort').addEventListener('change', (event) => narrowDashboard({ sort: { key: event.target.value } }));
+  $('#dashboard-sort').addEventListener('change', (event) => redrawDashboardFromFirstPage({ sort: { key: event.target.value } }));
   $('#dashboard-sort-direction').addEventListener('click', () =>
-    narrowDashboard({ sort: { direction: state.dashboard.sort.direction === 'asc' ? 'desc' : 'asc' } })
+    redrawDashboardFromFirstPage({ sort: { direction: SORT_DIRECTIONS[state.dashboard.sort.direction].next } })
   );
 
   if (!config.googleMapsApiKey) {
