@@ -2,11 +2,16 @@ import { bootstrapStore } from './bootstrap.js';
 import { readConfig } from './supabase-client.js';
 import { STATUS_LABELS, euros } from './store.js';
 import { placeType } from './place-fields.js';
+import { dashboardPage } from './dashboard.js';
+import { renderPageStrip } from './page-strip.js';
 
 /**
  * The Prospection page: text search for a business, add it to the tracked list, see it on
  * the map, and copy/open its Google Maps link for NFC encoding. Every Google Places / Maps
  * JavaScript call goes through the store's `checkAndConsumeQuota()` first.
+ *
+ * The map shares its area with a second view, the Tableau de bord: a paginated table of
+ * every tracked établissement. Both views draw the same `state.places`, loaded once.
  */
 
 const STATUS_COLORS = { to_visit: '#55a7e8', scheduled: '#e5b72b', sold: '#22a06b', refused: '#e5484d', non_compliant: '#a1a9b7' };
@@ -38,7 +43,14 @@ function markerIcon(status, selected) {
 }
 
 let store = null;
-const state = { places: [], map: null, markers: new Map(), selectedId: null };
+const state = {
+  places: [],
+  map: null,
+  markers: new Map(),
+  selectedId: null,
+  view: 'map',
+  dashboard: { page: 1, pageSize: 25 },
+};
 
 function setFormMessage(id, text, isError = false) {
   const message = $(id);
@@ -69,6 +81,7 @@ async function withBusyButton(button, busyLabel, task) {
 }
 
 function renderPlaceList() {
+  renderDashboard();
   $('#saved-count').textContent = state.places.length;
   const list = $('#place-list');
   list.innerHTML = '';
@@ -86,6 +99,53 @@ function renderPlaceList() {
     item.querySelector('small').textContent = place.address;
     item.querySelector('.place-item-main').addEventListener('click', () => selectPlace(place.placeId, true));
     list.appendChild(item);
+  });
+}
+
+/** Shows the map or the Tableau de bord in the map area; the sidebar stays either way. */
+function showView(view) {
+  state.view = view;
+  document.querySelectorAll('.view-switch [data-view]').forEach((button) => {
+    button.setAttribute('aria-pressed', String(button.dataset.view === view));
+  });
+  $('#dashboard-panel').classList.toggle('hidden', view !== 'dashboard');
+  renderDashboard();
+}
+
+/** Redraws the Tableau de bord from `state.places` — only while it is the view on screen. */
+function renderDashboard() {
+  if (state.view !== 'dashboard') return;
+  const view = dashboardPage(state.places, state.dashboard);
+  state.dashboard.page = view.page;
+
+  $('#dashboard-summary').textContent = view.total
+    ? `${view.first}-${view.last} sur ${view.total} établissement${view.total > 1 ? 's' : ''} suivi${view.total > 1 ? 's' : ''}`
+    : 'Aucun établissement suivi pour le moment.';
+
+  const body = $('#dashboard-rows');
+  body.innerHTML = view.rows.length
+    ? view.rows
+        .map(
+          (row) =>
+            `<tr data-id="${escapeHtml(row.placeId)}"><td><button type="button">${escapeHtml(row.name)}</button><small>${escapeHtml(row.address)}</small></td><td>${escapeHtml(row.commune) || '—'}</td><td>${escapeHtml(row.type)}</td><td><span class="status-dot ${escapeHtml(row.status)}"></span>${escapeHtml(row.statusLabel)}</td><td class="amount">${escapeHtml(row.saleAmount)}</td></tr>`
+        )
+        .join('')
+    : '<tr><td class="dashboard-empty" colspan="5">Tes établissements suivis apparaîtront ici.</td></tr>';
+  body.querySelectorAll('tr[data-id]').forEach((tableRow) => {
+    tableRow.addEventListener('click', () => {
+      showView('map');
+      selectPlace(tableRow.dataset.id, true);
+    });
+  });
+
+  renderPageStrip($('#dashboard-page-strip'), {
+    page: view.page,
+    totalPages: view.totalPages,
+    onSelect: (page) => {
+      state.dashboard.page = page;
+      renderDashboard();
+      $('#dashboard-panel').scrollTop = 0;
+    },
   });
 }
 
@@ -552,6 +612,15 @@ async function start() {
   store = bootstrapStore(window);
   const config = readConfig(window);
   if (!store || !config) return;
+
+  document.querySelectorAll('.view-switch [data-view]').forEach((button) => {
+    button.addEventListener('click', () => showView(button.dataset.view));
+  });
+  $('#dashboard-size').addEventListener('change', (event) => {
+    state.dashboard.pageSize = Number(event.target.value);
+    state.dashboard.page = 1;
+    renderDashboard();
+  });
 
   if (!config.googleMapsApiKey) {
     $('#map-placeholder-text').textContent = 'Clé Google Maps manquante pour ce déploiement.';

@@ -5,12 +5,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#101828" />
     <title>NFC Prospection · Prospection</title>
-    <link rel="stylesheet" href="styles.css?v=43" />
+    <link rel="stylesheet" href="styles.css?v=44" />
   </head>
   <body data-requires-auth data-page="prospection">
     <div id="app-shell">
       <header class="topbar">
         <a class="brand" href="index.html" title="Retour à l’accueil"><span class="brand-mark">N</span><span>NFC Prospection</span></a>
+        <nav class="view-switch" aria-label="Vue">
+          <button type="button" data-view="map" aria-pressed="true">Carte</button>
+          <button type="button" data-view="dashboard" aria-pressed="false">Tableau de bord</button>
+        </nav>
       </header>
 
       <aside class="sidebar">
@@ -63,6 +67,28 @@
           </div>
         </div>
         <div id="detail-card" class="detail-card hidden" aria-live="polite"></div>
+
+        <section id="dashboard-panel" class="dashboard-panel hidden" aria-label="Tableau de bord">
+          <div class="dashboard-header">
+            <p class="eyebrow">TABLEAU DE BORD</p>
+            <h2>Tous mes établissements</h2>
+            <p id="dashboard-summary"></p>
+          </div>
+          <div class="dashboard-list-section">
+            <div class="dashboard-table-scroll">
+              <table class="dashboard-grid">
+                <thead>
+                  <tr><th scope="col">Établissement</th><th scope="col">Commune</th><th scope="col">Type</th><th scope="col">Statut</th><th scope="col" class="amount">Vente</th></tr>
+                </thead>
+                <tbody id="dashboard-rows"></tbody>
+              </table>
+            </div>
+            <div class="dashboard-pagination">
+              <label>Afficher <select id="dashboard-size"><option value="10">10</option><option value="25" selected>25</option><option value="50">50</option><option value="100">100</option></select> par page</label>
+              <nav id="dashboard-page-strip" class="page-strip hidden" aria-label="Pagination du tableau de bord"></nav>
+            </div>
+          </div>
+        </section>
       </main>
     </div>
 
