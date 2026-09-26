@@ -10,10 +10,10 @@ import {
   dashboardPage,
   filterMenus,
   filteredPlaceIds,
-  filtersSet,
+  anyFilterChosen,
   matchesFilters,
+  NO_FILTERS,
   pruneSelection,
-  resetFilters,
   sortPlaces,
 } from './dashboard.js';
 import { renderPageStrip } from './page-strip.js';
@@ -77,7 +77,7 @@ const state = {
   dashboard: {
     page: 1,
     pageSize: 25,
-    filters: { city: null, type: null, status: null },
+    filters: NO_FILTERS,
     sort: { key: 'createdAt', direction: 'desc' },
     /** The ticked établissements' placeIds — always within the filtered set, rows on other pages included. */
     selection: new Set(),
@@ -214,7 +214,7 @@ function renderDashboardControls(menus) {
     menus.statuses.map((option) => ({ ...option, label: `${option.label} (${option.count})` })),
     status
   );
-  $('#dashboard-filters-reset').classList.toggle('hidden', !filtersSet(menus.filters));
+  $('#dashboard-filters-reset').classList.toggle('hidden', !anyFilterChosen(menus.filters));
   const { key, direction } = state.dashboard.sort;
   $('#dashboard-sort').value = key;
   const directionButton = $('#dashboard-sort-direction');
@@ -311,7 +311,8 @@ function renderDashboardSelection(listed) {
   const locked = state.dashboard.bulkRunning;
   document.querySelectorAll('#dashboard-rows .select-cell input').forEach((checkbox) => (checkbox.disabled = locked));
   selectAll.disabled = locked || !listed.length;
-  ['city', 'type', 'status', 'filters-reset'].forEach((control) => ($(`#dashboard-${control}`).disabled = locked));
+  ['city', 'type', 'status'].forEach((filter) => ($(`#dashboard-${filter}`).disabled = locked));
+  $('#dashboard-filters-reset').disabled = locked;
   $('#dashboard-bulk-status').disabled = locked;
   $('#dashboard-selection-clear').disabled = locked;
   $('#dashboard-bulk-apply').disabled = locked;
@@ -910,9 +911,8 @@ async function start() {
     $(`#dashboard-${filter}`).addEventListener('change', (event) => redrawDashboardFromFirstPage({ filters: { [filter]: event.target.value || null } }));
   });
   $('#dashboard-filters-reset').addEventListener('click', () => {
-    state.dashboard = resetFilters(state.dashboard);
-    setFormMessage('#dashboard-bulk-message', '');
-    renderDashboard();
+    // Resets the filters only: the sort, the page size and the selection are kept.
+    redrawDashboardFromFirstPage({ filters: NO_FILTERS });
     // The link just hid itself with no filter left set; keep keyboard focus on the filters.
     $('#dashboard-city').focus();
   });
