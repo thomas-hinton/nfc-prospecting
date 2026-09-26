@@ -176,3 +176,39 @@ export function dashboardMetrics(places, { filters = {}, salePrice }) {
     potentiel: { scheduled: priced(scheduled), toVisit: priced(toVisit) },
   };
 }
+
+/**
+ * `selection` (a Set of placeIds) narrowed to the établissements `places` leaves under
+ * `filters`, so a bulk change can never reach a row the prospector can no longer see.
+ */
+export function pruneSelection(selection, places, filters) {
+  const listed = new Set(places.filter((place) => matchesFilters(place, filters)).map((place) => place.placeId));
+  return new Set([...selection].filter((placeId) => listed.has(placeId)));
+}
+
+/**
+ * The statuts a bulk change can move établissements to, in the order offered: the pipeline
+ * moves that legitimately happen in batches. Never vendu — a vente carries a real, individual
+ * amount, and a bulk vendu would write one default sale price per row.
+ */
+export const BULK_STATUSES = ['scheduled', 'refused', 'non_compliant', 'to_visit'];
+
+/**
+ * What moving the `selected` établissements to `status` (one of BULK_STATUSES) will do, for
+ * the confirmation that precedes it: how many will move (`count`; those already at `status`
+ * are `unchanged`), and how many of those are vendu (`soldCount`) with the total sale amount
+ * clearing them will destroy (`amountCleared`).
+ */
+export function bulkImpact(selected, status) {
+  if (!BULK_STATUSES.includes(status)) throw new Error(`Statut indisponible en changement groupé : ${status}`);
+  const moving = selected.filter((place) => place.status !== status);
+  const sold = moving.filter((place) => place.status === 'sold');
+  return {
+    status,
+    statusLabel: STATUS_LABELS[status],
+    count: moving.length,
+    unchanged: selected.length - moving.length,
+    soldCount: sold.length,
+    amountCleared: sold.reduce((sum, place) => sum + toCents(place.saleAmount), 0) / 100,
+  };
+}

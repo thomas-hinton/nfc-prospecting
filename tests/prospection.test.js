@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createStore } from '../src/store.js';
 import { createFakeSupabase } from './fake-supabase.js';
-import { chooseVisibleMarkers, placesOnMap, runZoneScan, zoneCells } from '../src/prospection.js';
+import { chooseVisibleMarkers, placesOnMap, runBulkStatusChange, runZoneScan, zoneCells } from '../src/prospection.js';
 
 const account = { email: 'prospecteur@example.com', password: 'correct-horse', id: 'user-1' };
 
@@ -265,5 +265,109 @@ describe('runZoneScan', () => {
       { cellsProcessed: 2, cellsTotal: 2, added: 1 },
     ]);
     expect(added).toEqual(['place-43.18', 'place-43.19']);
+  });
+});
+
+describe('runBulkStatusChange', () => {
+  /** Établissements in the order they were added (Établissement 1, 2, …). */
+  const inAddedOrder = (places) => [...places].sort((a, b) => a.name.localeCompare(b.name, 'fr', { numeric: true }));
+  /** A signed-in store tracking `count` établissements, and those établissements in the order added. */
+  async function tracking(count, options) {
+    const { store, client } = setup(options);
+    await store.signIn(account.email, account.password);
+    for (let index = 1; index <= count; index++) {
+      await store.upsertPlace({ placeId: `place-${index}`, name: `Établissement ${index}`, address: `${index} rue du Port` });
+    }
+    return { store, client, places: inAddedOrder(await store.listPlaces()) };
+  }
+  /** The Backlog trail as a prospector reads it, without ids or timestamps. */
+  const trail = (client) => client.state.tables.activity_log.map(({ action, place_name, address, details }) => ({ action, place_name, address, details }));
+
+  it('moves every selected établissement to the statut and reports how many changed', async () => {
+    const { store, places } = await tracking(3);
+
+    const report = await runBulkStatusChange({ places, status: 'scheduled', store });
+
+    expect(report).toMatchObject({ changed: 3, total: 3, failed: null, error: null });
+    expect(report.updated.map((place) => place.status)).toEqual(['scheduled', 'scheduled', 'scheduled']);
+    expect((await store.listPlaces()).every((place) => place.status === 'scheduled')).toBe(true);
+  });
+
+  it('leaves the same Backlog trail as making the same changes one at a time', async () => {
+    const bulk = await tracking(3);
+    await bulk.store.setStatus(bulk.places[1].id, 'sold', { saleAmount: 80 });
+    const single = await tracking(3);
+    await single.store.setStatus(single.places[1].id, 'sold', { saleAmount: 80 });
+
+    await runBulkStatusChange({ places: inAddedOrder(await bulk.store.listPlaces()), status: 'refused', store: bulk.store });
+    for (const place of inAddedOrder(await single.store.listPlaces())) await single.store.setStatus(place.id, 'refused');
+
+    expect(trail(bulk.client)).toEqual(trail(single.client));
+  });
+
+  it('writes through the store’s single-établissement statut path, one call per établissement, in order', async () => {
+    const { store, places } = await tracking(3);
+    const calls = [];
+    const spy = { ...store, setStatus: (id, status) => (calls.push([id, status]), store.setStatus(id, status)) };
+
+    await runBulkStatusChange({ places, status: 'non_compliant', store: spy });
+
+    expect(calls).toEqual(places.map((place) => [place.id, 'non_compliant']));
+  });
+
+  it('skips an établissement already at the statut', async () => {
+    const { store, client, places } = await tracking(2);
+    await store.setStatus(places[0].id, 'refused');
+    const before = client.state.tables.activity_log.length;
+
+    const report = await runBulkStatusChange({ places: await store.listPlaces(), status: 'refused', store });
+
+    expect(report).toMatchObject({ changed: 1, total: 1 });
+    expect(client.state.tables.activity_log).toHaveLength(before + 1);
+  });
+
+  it('stops at the first failure and reports how many changed before it', async () => {
+    const { store, places } = await tracking(4);
+    const failure = new Error('réseau coupé');
+    const flaky = { ...store, setStatus: (id, status) => (id === places[2].id ? Promise.reject(failure) : store.setStatus(id, status)) };
+
+    const report = await runBulkStatusChange({ places, status: 'scheduled', store: flaky });
+
+    expect(report).toMatchObject({ changed: 2, total: 4, error: failure });
+    expect(report.failed.id).toBe(places[2].id);
+    expect(report.updated.map((place) => place.id)).toEqual([places[0].id, places[1].id]);
+    const statuses = inAddedOrder(await store.listPlaces()).map((place) => place.status);
+    expect(statuses).toEqual(['scheduled', 'scheduled', 'to_visit', 'to_visit']);
+  });
+
+  it('can be retried after a failure without applying a statut twice', async () => {
+    const { store, client, places } = await tracking(3);
+    let failOnce = true;
+    const flaky = {
+      ...store,
+      setStatus: (id, status) => {
+        if (id === places[1].id && failOnce) {
+          failOnce = false;
+          return Promise.reject(new Error('réseau coupé'));
+        }
+        return store.setStatus(id, status);
+      },
+    };
+    await runBulkStatusChange({ places, status: 'refused', store: flaky });
+
+    // A retry over the same, now stale, selection.
+    const report = await runBulkStatusChange({ places, status: 'refused', store: flaky });
+
+    expect(report.error).toBeNull();
+    const changes = client.state.tables.activity_log.filter((entry) => entry.action === 'status_changed');
+    expect(changes.map((entry) => entry.place_name)).toEqual(['Établissement 1', 'Établissement 2', 'Établissement 3']);
+  });
+
+  it('refuses to bulk-mark vendu', async () => {
+    const { store, client, places } = await tracking(1);
+    const before = client.state.tables.activity_log.length;
+
+    await expect(runBulkStatusChange({ places, status: 'sold', store })).rejects.toThrow();
+    expect(client.state.tables.activity_log).toHaveLength(before);
   });
 });

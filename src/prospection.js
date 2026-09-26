@@ -2,7 +2,7 @@ import { bootstrapStore } from './bootstrap.js';
 import { readConfig } from './supabase-client.js';
 import { STATUS_LABELS, euros } from './store.js';
 import { placeTypeLabel } from './place-fields.js';
-import { dashboardMetrics, dashboardPage, filterMenus, matchesFilters, sortPlaces } from './dashboard.js';
+import { BULK_STATUSES, bulkImpact, dashboardMetrics, dashboardPage, filterMenus, matchesFilters, pruneSelection, sortPlaces } from './dashboard.js';
 import { renderPageStrip } from './page-strip.js';
 
 /**
@@ -30,6 +30,8 @@ const SORT_DIRECTIONS = {
 };
 
 const $ = (selector) => document.querySelector(selector);
+/** The French plural "s" for `count` of something. */
+const plural = (count) => (count > 1 ? 's' : '');
 const escapeHtml = (text = '') =>
   String(text).replace(/[&<>'"]/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[character]);
 
@@ -64,6 +66,8 @@ const state = {
     pageSize: 25,
     filters: { city: null, type: null, status: null },
     sort: { key: 'createdAt', direction: 'desc' },
+    /** The ticked établissements' placeIds — always within the filtered set, rows on other pages included. */
+    selection: new Set(),
   },
 };
 
@@ -204,6 +208,7 @@ function renderDashboard() {
   if (state.view !== 'dashboard') return;
   const menus = filterMenus(state.places, state.dashboard.filters);
   state.dashboard.filters = menus.filters;
+  state.dashboard.selection = pruneSelection(state.dashboard.selection, state.places, menus.filters);
   renderDashboardControls(menus);
   renderDashboardMetrics(menus.filters);
   const listed = sortPlaces(
@@ -214,7 +219,6 @@ function renderDashboard() {
   state.dashboard.page = shown.page;
 
   const tracked = state.places.length;
-  const plural = (count) => (count > 1 ? 's' : '');
   const range = `${shown.first}-${shown.last} sur ${shown.total} établissement${plural(shown.total)}`;
   // filterMenus never leaves the filters emptying the list, so it is only empty with nothing tracked.
   $('#dashboard-summary').textContent = !tracked
@@ -228,16 +232,25 @@ function renderDashboard() {
     ? shown.rows
         .map(
           (row) =>
-            `<tr data-id="${escapeHtml(row.placeId)}"><td><button type="button">${escapeHtml(row.name)}</button><small>${escapeHtml(row.address)}</small></td><td>${escapeHtml(row.city) || '—'}</td><td>${escapeHtml(row.type)}</td><td><span class="status-dot ${escapeHtml(row.status)}"></span>${escapeHtml(row.statusLabel)}</td><td class="amount">${escapeHtml(row.saleAmount)}</td></tr>`
+            `<tr data-id="${escapeHtml(row.placeId)}"><td class="select-cell"><input type="checkbox" aria-label="Sélectionner ${escapeHtml(row.name)}"></td><td><button type="button">${escapeHtml(row.name)}</button><small>${escapeHtml(row.address)}</small></td><td>${escapeHtml(row.city) || '—'}</td><td>${escapeHtml(row.type)}</td><td><span class="status-dot ${escapeHtml(row.status)}"></span>${escapeHtml(row.statusLabel)}</td><td class="amount">${escapeHtml(row.saleAmount)}</td></tr>`
         )
         .join('')
-    : '<tr><td class="dashboard-empty" colspan="5">Tes établissements suivis apparaîtront ici.</td></tr>';
+    : '<tr><td class="dashboard-empty" colspan="6">Tes établissements suivis apparaîtront ici.</td></tr>';
   body.querySelectorAll('tr[data-id]').forEach((tableRow) => {
-    tableRow.addEventListener('click', () => {
+    tableRow.querySelector('.select-cell input').addEventListener('change', (event) => {
+      if (event.target.checked) state.dashboard.selection.add(tableRow.dataset.id);
+      else state.dashboard.selection.delete(tableRow.dataset.id);
+      renderDashboardSelection(listed);
+    });
+    tableRow.addEventListener('click', (event) => {
+      // Ticking a row selects it; only a click elsewhere on the row opens it on the map.
+      if (event.target.closest('.select-cell')) return;
       showView('map');
       selectPlace(tableRow.dataset.id, true);
     });
   });
+
+  renderDashboardSelection(listed);
 
   renderPageStrip($('#dashboard-page-strip'), {
     page: shown.page,
@@ -248,6 +261,77 @@ function renderDashboard() {
       $('#dashboard-panel').scrollTop = 0;
     },
   });
+}
+
+/**
+ * Redraws what shows the selection without rebuilding the rows: the row and header ticks,
+ * the permanently visible count (with how many of the ticked rows are off this page) and the
+ * bulk action's controls. `listed` is the filtered set, which the selection is within.
+ */
+function renderDashboardSelection(listed) {
+  const { selection } = state.dashboard;
+  let onPage = 0;
+  document.querySelectorAll('#dashboard-rows tr[data-id]').forEach((tableRow) => {
+    const ticked = selection.has(tableRow.dataset.id);
+    tableRow.querySelector('.select-cell input').checked = ticked;
+    tableRow.classList.toggle('is-selected', ticked);
+    if (ticked) onPage += 1;
+  });
+
+  const selectAll = $('#dashboard-select-all');
+  selectAll.checked = listed.length > 0 && selection.size === listed.length;
+  selectAll.indeterminate = selection.size > 0 && selection.size < listed.length;
+  selectAll.disabled = !listed.length;
+
+  const count = selection.size;
+  const elsewhere = count - onPage;
+  $('#dashboard-selection-count').textContent = !count
+    ? 'Aucun établissement sélectionné'
+    : `${count} établissement${plural(count)} sélectionné${plural(count)}${elsewhere ? ` (dont ${elsewhere} sur d’autres pages)` : ''}`;
+  $('#dashboard-selection-clear').disabled = !count;
+  $('#dashboard-bulk-apply').disabled = !count;
+}
+
+/** The confirmation every bulk change is preceded by, from its `impact` (see `bulkImpact`). */
+function bulkConfirmation(impact) {
+  const { count, unchanged, statusLabel, soldCount, amountCleared } = impact;
+  let text = `Passer ${count} établissement${plural(count)} au statut « ${statusLabel} » ?`;
+  if (unchanged) text += `\n(${unchanged} déjà à ce statut ne change${unchanged > 1 ? 'nt' : ''} pas.)`;
+  if (soldCount) {
+    text += `\n\n${soldCount} ${soldCount > 1 ? 'sont vendus' : 'est vendu'} : ${soldCount > 1 ? 'leurs montants de vente seront supprimés' : 'son montant de vente sera supprimé'}, soit ${euros(amountCleared)} au total.`;
+  }
+  return text;
+}
+
+/** Moves every ticked établissement to the statut picked in the action bar, after a confirmation. */
+async function onBulkStatusChange() {
+  const status = $('#dashboard-bulk-status').value;
+  const selected = state.places.filter((place) => state.dashboard.selection.has(place.placeId));
+  const impact = bulkImpact(selected, status);
+  if (!impact.count) {
+    setFormMessage('#dashboard-bulk-message', `Ces établissements sont déjà au statut « ${impact.statusLabel} ».`);
+    return;
+  }
+  if (!window.confirm(bulkConfirmation(impact))) return;
+
+  setFormMessage('#dashboard-bulk-message', 'Changement de statut en cours…');
+  await withBusyButton($('#dashboard-bulk-apply'), 'Modification…', async () => {
+    const report = await runBulkStatusChange({ places: selected, status, store });
+    applyPlaceUpdates(report.updated);
+    const moved = `${report.changed} établissement${plural(report.changed)} passé${plural(report.changed)} au statut « ${impact.statusLabel} »`;
+    if (report.error) {
+      console.error(report.error);
+      setFormMessage(
+        '#dashboard-bulk-message',
+        `Arrêt sur « ${report.failed.name} » : ${moved} sur ${report.total}. Réessaie : les établissements déjà modifiés ne le seront pas deux fois.`,
+        true
+      );
+      return;
+    }
+    state.dashboard.selection.clear();
+    setFormMessage('#dashboard-bulk-message', `${moved}.`);
+  });
+  renderDashboard();
 }
 
 /** A stable, order-independent hash of a placeId, used to pick a deterministic sample within a bucket. */
@@ -368,11 +452,13 @@ function selectPlace(placeId, pan = false) {
   renderDetail(place);
 }
 
-/** Replaces `updated` in state.places, and re-renders whatever's currently showing it. */
-function applyPlaceUpdate(updated) {
-  state.places = state.places.map((place) => (place.id === updated.id ? updated : place));
+/** Replaces each of `updated` in state.places, and re-renders whatever's currently showing them, once. */
+function applyPlaceUpdates(updated) {
+  const byId = new Map(updated.map((place) => [place.id, place]));
+  state.places = state.places.map((place) => byId.get(place.id) ?? place);
   renderPlaces();
-  if (state.selectedId === updated.placeId) renderDetail(updated);
+  const open = state.places.find((place) => place.placeId === state.selectedId);
+  if (open && byId.has(open.id)) renderDetail(open);
 }
 
 async function onStatusChange(place, status) {
@@ -383,7 +469,7 @@ async function onStatusChange(place, status) {
     if (!window.confirm(`Remettre « ${place.name} » au statut « À visiter » ?${warning}`)) return;
   }
   try {
-    applyPlaceUpdate(await store.setStatus(place.id, status));
+    applyPlaceUpdates([await store.setStatus(place.id, status)]);
   } catch (error) {
     console.error(error);
     window.alert('Impossible de mettre à jour le statut. Réessaie dans un instant.');
@@ -399,7 +485,7 @@ async function onEditSaleAmount(place) {
     return;
   }
   try {
-    applyPlaceUpdate(await store.setSaleAmount(place.id, amount));
+    applyPlaceUpdates([await store.setSaleAmount(place.id, amount)]);
   } catch (error) {
     console.error(error);
     window.alert('Impossible de mettre à jour le montant de la vente. Réessaie dans un instant.');
@@ -636,6 +722,30 @@ export async function runZoneScan({ cells, store, searchCell, onCellStart, onPla
   return { added, cellsProcessed, cellsTotal: cells.length, quotaExhausted };
 }
 
+/**
+ * Moves the établissements `places` to `status` (one of BULK_STATUSES — never vendu) with one
+ * `store.setStatus` call each, in order: the store's single-établissement write path, so the
+ * Backlog trail is the one the same changes made one at a time would leave. No transaction —
+ * on the first failure it stops, and the report says how many were `changed` before it and
+ * which établissement `failed`, with the `error`. An établissement already at `status` is
+ * skipped, and `setStatus` itself is a no-op on one that got there since, so a retry over
+ * the same selection never applies a statut twice. `updated` holds the établissements as
+ * changed, for the caller to redraw.
+ */
+export async function runBulkStatusChange({ places, status, store }) {
+  if (!BULK_STATUSES.includes(status)) throw new Error(`Statut indisponible en changement groupé : ${status}`);
+  const moving = places.filter((place) => place.status !== status);
+  const updated = [];
+  for (const place of moving) {
+    try {
+      updated.push(await store.setStatus(place.id, status));
+    } catch (error) {
+      return { changed: updated.length, total: moving.length, updated, failed: place, error };
+    }
+  }
+  return { changed: updated.length, total: moving.length, updated, failed: null, error: null };
+}
+
 /** "3 nouvelles fiches ajoutées" / "1 nouvelle fiche ajoutée" / "aucune nouvelle fiche" — French plural agreement for the scan's running add count. */
 function addedFichesLabel(count) {
   if (!count) return 'aucune nouvelle fiche';
@@ -766,6 +876,19 @@ async function start() {
   ['city', 'type', 'status'].forEach((filter) => {
     $(`#dashboard-${filter}`).addEventListener('change', (event) => redrawDashboardFromFirstPage({ filters: { [filter]: event.target.value || null } }));
   });
+  $('#dashboard-select-all').addEventListener('change', (event) => {
+    // Ticks the whole filtered set, rows on other pages included — not just this page.
+    state.dashboard.selection = event.target.checked
+      ? new Set(state.places.filter((place) => matchesFilters(place, state.dashboard.filters)).map((place) => place.placeId))
+      : new Set();
+    renderDashboard();
+  });
+  $('#dashboard-selection-clear').addEventListener('click', () => {
+    state.dashboard.selection.clear();
+    renderDashboard();
+  });
+  $('#dashboard-bulk-status').innerHTML = BULK_STATUSES.map((status) => `<option value="${status}">${STATUS_LABELS[status]}</option>`).join('');
+  $('#dashboard-bulk-apply').addEventListener('click', onBulkStatusChange);
   $('#dashboard-sort').addEventListener('change', (event) => redrawDashboardFromFirstPage({ sort: { key: event.target.value } }));
   $('#dashboard-sort-direction').addEventListener('click', () =>
     redrawDashboardFromFirstPage({ sort: { direction: SORT_DIRECTIONS[state.dashboard.sort.direction].next } })

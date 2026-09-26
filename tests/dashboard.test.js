@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { NO_CITY, SORT_COMPARATORS, dashboardMetrics, dashboardPage, dashboardRow, filterMenus, matchesFilters, sortPlaces } from '../src/dashboard.js';
+import { BULK_STATUSES, NO_CITY, SORT_COMPARATORS, bulkImpact, dashboardMetrics, dashboardPage, dashboardRow, filterMenus, matchesFilters, pruneSelection, sortPlaces } from '../src/dashboard.js';
 
 function place(overrides = {}) {
   return {
@@ -348,5 +348,62 @@ describe('dashboardMetrics', () => {
       refused: 0,
       potentiel: { scheduled: 0, toVisit: 0 },
     });
+  });
+});
+
+describe('pruneSelection', () => {
+  const tracked = [
+    place({ placeId: 'a', city: 'Bandol' }),
+    place({ placeId: 'b', city: 'Bandol', status: 'scheduled' }),
+    place({ placeId: 'c', city: 'Sanary-sur-Mer' }),
+  ];
+
+  it('keeps only the ticked établissements the filters still return', () => {
+    expect(pruneSelection(new Set(['a', 'b', 'c']), tracked, { city: 'Bandol' })).toEqual(new Set(['a', 'b']));
+    expect(pruneSelection(new Set(['a', 'c']), tracked, { city: 'Bandol', status: 'scheduled' })).toEqual(new Set());
+  });
+
+  it('drops a ticked établissement that is no longer tracked', () => {
+    expect(pruneSelection(new Set(['a', 'gone']), tracked, {})).toEqual(new Set(['a']));
+  });
+});
+
+describe('BULK_STATUSES', () => {
+  it('offers every pipeline move but vendu, whose amount is individual', () => {
+    expect([...BULK_STATUSES].sort()).toEqual(['non_compliant', 'refused', 'scheduled', 'to_visit']);
+    expect(BULK_STATUSES).not.toContain('sold');
+  });
+});
+
+describe('bulkImpact', () => {
+  const selection = [
+    place({ id: 'row-1', placeId: 'a', status: 'to_visit' }),
+    place({ id: 'row-2', placeId: 'b', status: 'sold', saleAmount: 50 }),
+    place({ id: 'row-3', placeId: 'c', status: 'sold', saleAmount: 79.9 }),
+    place({ id: 'row-4', placeId: 'd', status: 'refused', saleAmount: 30 }),
+  ];
+
+  it('counts the établissements that will move to the target statut, and names it', () => {
+    expect(bulkImpact(selection, 'scheduled')).toMatchObject({ count: 4, unchanged: 0, status: 'scheduled', statusLabel: 'Programmé pour visite' });
+  });
+
+  it('does not count those already at the target statut as moving', () => {
+    expect(bulkImpact(selection, 'refused')).toMatchObject({ count: 3, unchanged: 1 });
+  });
+
+  it('counts the vendus the change will clear and the total sale amount it destroys, to the cent', () => {
+    expect(bulkImpact(selection, 'to_visit')).toMatchObject({ soldCount: 2, amountCleared: 129.9 });
+  });
+
+  it('ignores an amount left on an établissement that is not vendu', () => {
+    expect(bulkImpact(selection.filter((item) => item.status !== 'sold'), 'scheduled')).toMatchObject({ soldCount: 0, amountCleared: 0 });
+  });
+
+  it('refuses vendu as a target, which a bulk change never offers', () => {
+    expect(() => bulkImpact(selection, 'sold')).toThrow();
+  });
+
+  it('reads all zeros over an empty selection', () => {
+    expect(bulkImpact([], 'refused')).toEqual({ status: 'refused', statusLabel: 'Refusé', count: 0, unchanged: 0, soldCount: 0, amountCleared: 0 });
   });
 });

@@ -95,10 +95,17 @@
                 </span>
               </div>
             </div>
+            <div class="dashboard-bulk" role="group" aria-label="Changement de statut groupé">
+              <p id="dashboard-selection-count" class="dashboard-selection-count" aria-live="polite"></p>
+              <button id="dashboard-selection-clear" class="dashboard-bulk-clear" type="button">Tout désélectionner</button>
+              <label class="dashboard-bulk-status">Passer au statut <select id="dashboard-bulk-status"></select></label>
+              <button id="dashboard-bulk-apply" class="dashboard-bulk-apply" type="button">Appliquer</button>
+              <p id="dashboard-bulk-message" class="form-message"></p>
+            </div>
             <div class="dashboard-table-scroll">
               <table class="dashboard-grid">
                 <thead>
-                  <tr><th scope="col">Établissement</th><th scope="col">Commune</th><th scope="col">Type</th><th scope="col">Statut</th><th scope="col" class="amount">Vente</th></tr>
+                  <tr><th scope="col" class="select-cell"><input id="dashboard-select-all" type="checkbox" aria-label="Sélectionner tous les établissements filtrés, toutes pages comprises" title="Sélectionner tous les établissements filtrés, toutes pages comprises"></th><th scope="col">Établissement</th><th scope="col">Commune</th><th scope="col">Type</th><th scope="col">Statut</th><th scope="col" class="amount">Vente</th></tr>
                 </thead>
                 <tbody id="dashboard-rows"></tbody>
               </table>
