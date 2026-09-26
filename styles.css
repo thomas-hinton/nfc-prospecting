@@ -84,8 +84,9 @@ body[data-requires-auth] { visibility:hidden; }
 .dashboard-bulk-status select { height:32px; padding:0 8px; border:1px solid #d8dee8; border-radius:8px; background:#fff; color:#344054; font-size:12px; }
 .dashboard-bulk-apply { height:32px; padding:0 12px; border:0; border-radius:8px; background:var(--brand); color:#fff; font-size:12px; font-weight:750; }
 .dashboard-bulk-apply:disabled { background:#d0d5dd; }
-.dashboard-bulk .form-message { flex-basis:100%; margin:0; }
-.dashboard-bulk .form-message:empty { display:none; }
+.dashboard-bulk.hidden { display:none; }
+.dashboard-bulk-message { margin:0 0 12px; }
+.dashboard-bulk-message:empty { display:none; }
 .dashboard-grid .select-cell { width:1%; padding-right:0; cursor:default; }
 .dashboard-grid .select-cell input { width:16px; height:16px; margin:0; accent-color:var(--brand); cursor:pointer; }
 .dashboard-grid tbody tr.is-selected { background:#fff7f3; }

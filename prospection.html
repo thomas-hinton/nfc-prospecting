@@ -95,13 +95,13 @@
                 </span>
               </div>
             </div>
-            <div class="dashboard-bulk" role="group" aria-label="Changement de statut groupé">
+            <div id="dashboard-bulk" class="dashboard-bulk hidden" role="group" aria-label="Changement de statut groupé">
               <p id="dashboard-selection-count" class="dashboard-selection-count" aria-live="polite"></p>
               <button id="dashboard-selection-clear" class="dashboard-bulk-clear" type="button">Tout désélectionner</button>
               <label class="dashboard-bulk-status">Passer au statut <select id="dashboard-bulk-status"></select></label>
               <button id="dashboard-bulk-apply" class="dashboard-bulk-apply" type="button">Appliquer</button>
-              <p id="dashboard-bulk-message" class="form-message"></p>
             </div>
+            <p id="dashboard-bulk-message" class="form-message dashboard-bulk-message" aria-live="polite"></p>
             <div class="dashboard-table-scroll">
               <table class="dashboard-grid">
                 <thead>

@@ -86,7 +86,7 @@ const state = {
 
 function setFormMessage(id, text, isError = false) {
   const message = $(id);
-  message.className = `form-message${isError ? ' error' : ''}`;
+  message.classList.toggle('error', isError);
   message.textContent = text;
 }
 
@@ -253,6 +253,7 @@ function renderDashboard() {
     tableRow.querySelector('.select-cell input').addEventListener('change', (event) => {
       if (event.target.checked) state.dashboard.selection.add(tableRow.dataset.id);
       else state.dashboard.selection.delete(tableRow.dataset.id);
+      setFormMessage('#dashboard-bulk-message', '');
       renderDashboardSelection(listed);
     });
     tableRow.addEventListener('click', (event) => {
@@ -277,9 +278,10 @@ function renderDashboard() {
 }
 
 /**
- * Redraws what shows the selection without rebuilding the rows: the row and header ticks,
- * the permanently visible count (with how many of the ticked rows are off this page) and the
- * bulk action's controls. `listed` is the filtered set, which the selection is within.
+ * Redraws what shows the selection without rebuilding the rows: the row and header ticks, and
+ * the action bar — shown only while something is ticked — with its count (and how many of the
+ * ticked rows are off this page) and controls. `listed` is the filtered set, which the selection
+ * is within.
  */
 function renderDashboardSelection(listed) {
   const { selection } = state.dashboard;
@@ -297,17 +299,16 @@ function renderDashboardSelection(listed) {
 
   const count = selection.size;
   const elsewhere = count - onPage;
-  $('#dashboard-selection-count').textContent = !count
-    ? 'Aucun établissement sélectionné'
-    : `${count} établissement${plural(count)} sélectionné${plural(count)}${elsewhere ? ` (dont ${elsewhere} sur d’autres pages)` : ''}`;
+  $('#dashboard-bulk').classList.toggle('hidden', !count);
+  $('#dashboard-selection-count').textContent = `${count} établissement${plural(count)} sélectionné${plural(count)}${elsewhere ? ` (dont ${elsewhere} sur d’autres pages)` : ''}`;
   // While a bulk change runs, what it acts on is frozen: no ticking, no clearing, no filtering.
   const locked = state.dashboard.bulkRunning;
   document.querySelectorAll('#dashboard-rows .select-cell input').forEach((checkbox) => (checkbox.disabled = locked));
   selectAll.disabled = locked || !listed.length;
   ['city', 'type', 'status'].forEach((filter) => ($(`#dashboard-${filter}`).disabled = locked));
   $('#dashboard-bulk-status').disabled = locked;
-  $('#dashboard-selection-clear').disabled = locked || !count;
-  $('#dashboard-bulk-apply').disabled = locked || !count;
+  $('#dashboard-selection-clear').disabled = locked;
+  $('#dashboard-bulk-apply').disabled = locked;
 }
 
 /** The confirmation every bulk change is preceded by, from its `impact` (see `bulkImpact`). */
@@ -895,6 +896,8 @@ async function start() {
     state.dashboard.filters = { ...state.dashboard.filters, ...filters };
     state.dashboard.sort = { ...state.dashboard.sort, ...sort };
     state.dashboard.page = 1;
+    // A filter change can prune the selection a bulk message was about.
+    setFormMessage('#dashboard-bulk-message', '');
     renderDashboard();
   };
   ['city', 'type', 'status'].forEach((filter) => {
@@ -903,11 +906,15 @@ async function start() {
   $('#dashboard-select-all').addEventListener('change', (event) => {
     // Ticks the whole filtered set, rows on other pages included — not just this page.
     state.dashboard.selection = event.target.checked ? filteredPlaceIds(state.places, state.dashboard.filters) : new Set();
+    setFormMessage('#dashboard-bulk-message', '');
     renderDashboard();
   });
   $('#dashboard-selection-clear').addEventListener('click', () => {
     state.dashboard.selection.clear();
+    setFormMessage('#dashboard-bulk-message', '');
     renderDashboard();
+    // The button just hid itself with the action bar; keep keyboard focus on the table.
+    $('#dashboard-select-all').focus();
   });
   $('#dashboard-bulk-status').innerHTML = BULK_STATUSES.map((status) => `<option value="${status}">${STATUS_LABELS[status]}</option>`).join('');
   $('#dashboard-bulk-apply').addEventListener('click', onBulkStatusChange);
