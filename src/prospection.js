@@ -13,6 +13,7 @@ import {
   anyFilterChosen,
   matchesFilters,
   NO_FILTERS,
+  printedDocument,
   pruneSelection,
   sortPlaces,
 } from './dashboard.js';
@@ -222,6 +223,31 @@ function renderDashboardControls(menus) {
   directionButton.setAttribute('aria-label', `Ordre ${SORT_DIRECTIONS[direction].word}, cliquer pour inverser`);
 }
 
+/** The Tableau de bord's filtered set, in its sort order — every page of it. */
+function dashboardListed() {
+  return sortPlaces(
+    state.places.filter((place) => matchesFilters(place, state.dashboard.filters)),
+    state.dashboard.sort
+  );
+}
+
+/**
+ * Fills the print-only container with the printed Tableau de bord (see `printedDocument`): the
+ * ticked établissements, or else the whole filtered set, from the list in memory rather than
+ * the rows on screen — so a print of a many-page list holds every page. Run just before the
+ * browser prints, whichever way the print was asked for (the button, or the browser's own).
+ */
+function renderDashboardPrint() {
+  const printed = printedDocument(dashboardListed(), state.dashboard.selection, new Date());
+  $('#dashboard-print-caption').textContent = printed.caption;
+  $('#dashboard-print-rows').innerHTML = printed.rows
+    .map(
+      (row) =>
+        `<tr><td><strong>${escapeHtml(row.name)}</strong><small>${escapeHtml(row.address)}</small></td><td>${escapeHtml(row.city) || '—'}</td><td>${escapeHtml(row.type)}</td><td>${escapeHtml(row.statusLabel)}</td><td class="amount">${escapeHtml(row.saleAmount)}</td></tr>`
+    )
+    .join('');
+}
+
 /** Redraws the Tableau de bord from `state.places` — only while it is the view on screen. */
 function renderDashboard() {
   if (state.view !== 'dashboard') return;
@@ -230,10 +256,7 @@ function renderDashboard() {
   state.dashboard.selection = pruneSelection(state.dashboard.selection, state.places, menus.filters);
   renderDashboardControls(menus);
   renderDashboardMetrics(menus.filters);
-  const listed = sortPlaces(
-    state.places.filter((place) => matchesFilters(place, menus.filters)),
-    state.dashboard.sort
-  );
+  const listed = dashboardListed();
   const shown = dashboardPage(listed, state.dashboard);
   state.dashboard.page = shown.page;
 
@@ -931,6 +954,15 @@ async function start() {
   });
   $('#dashboard-bulk-status').innerHTML = BULK_STATUSES.map((status) => `<option value="${status}">${STATUS_LABELS[status]}</option>`).join('');
   $('#dashboard-bulk-apply').addEventListener('click', onBulkStatusChange);
+  $('#dashboard-print').addEventListener('click', () => window.print());
+  // The printed Tableau de bord replaces the page only while it is the view on screen; printing
+  // the map view prints the page as it is.
+  window.addEventListener('beforeprint', () => {
+    const printing = state.view === 'dashboard';
+    if (printing) renderDashboardPrint();
+    document.body.classList.toggle('printing-dashboard', printing);
+  });
+  window.addEventListener('afterprint', () => document.body.classList.remove('printing-dashboard'));
   $('#dashboard-sort').addEventListener('change', (event) => redrawDashboardFromFirstPage({ sort: { key: event.target.value } }));
   $('#dashboard-sort-direction').addEventListener('click', () =>
     redrawDashboardFromFirstPage({ sort: { direction: SORT_DIRECTIONS[state.dashboard.sort.direction].next } })

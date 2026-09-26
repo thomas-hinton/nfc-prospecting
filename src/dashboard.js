@@ -235,3 +235,26 @@ export function bulkImpact(selected, status) {
     amountCleared: saleTotal(sold),
   };
 }
+
+/**
+ * The établissements a print covers: the ticked ones when any are ticked, otherwise the whole
+ * filtered set — every page of it, not just the rows on screen. `listed` is the filtered and
+ * sorted list, so the print keeps its order; a ticked placeId it no longer holds is not printed.
+ */
+export function printedPlaces(listed, selection) {
+  return selection.size ? listed.filter((place) => selection.has(place.placeId)) : listed;
+}
+
+const printedOn = new Intl.DateTimeFormat('fr-FR', { dateStyle: 'long' });
+const printedAt = new Intl.DateTimeFormat('fr-FR', { timeStyle: 'short' });
+
+/**
+ * The printed Tableau de bord as of `producedAt`: a row per établissement in `printedPlaces`,
+ * and a caption saying how many it covers and when it was produced, so an archived copy
+ * describes itself.
+ */
+export function printedDocument(listed, selection, producedAt) {
+  const rows = printedPlaces(listed, selection).map(dashboardRow);
+  const count = `${rows.length} établissement${rows.length > 1 ? 's' : ''}`;
+  return { rows, caption: `${count} · édité le ${printedOn.format(producedAt)} à ${printedAt.format(producedAt)}` };
+}

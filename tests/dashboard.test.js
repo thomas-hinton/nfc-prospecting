@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BULK_STATUSES, NO_CITY, NO_FILTERS, SORT_COMPARATORS, anyFilterChosen, bulkImpact, dashboardMetrics, dashboardPage, dashboardRow, filterMenus, matchesFilters, pruneSelection, sortPlaces } from '../src/dashboard.js';
+import { BULK_STATUSES, NO_CITY, NO_FILTERS, SORT_COMPARATORS, anyFilterChosen, bulkImpact, dashboardMetrics, dashboardPage, dashboardRow, filterMenus, matchesFilters, printedDocument, printedPlaces, pruneSelection, sortPlaces } from '../src/dashboard.js';
 
 function place(overrides = {}) {
   return {
@@ -429,5 +429,39 @@ describe('bulkImpact', () => {
 
   it('reads all zeros over an empty selection', () => {
     expect(bulkImpact([], 'refused')).toEqual({ status: 'refused', statusLabel: 'Refusé', count: 0, unchanged: 0, soldCount: 0, amountCleared: 0 });
+  });
+});
+
+describe('printedPlaces', () => {
+  const listed = [place({ placeId: 'a' }), place({ placeId: 'b' }), place({ placeId: 'c' })];
+
+  it('prints the whole filtered-and-sorted list when nothing is ticked, pages included', () => {
+    const many = Array.from({ length: 400 }, (_, index) => place({ placeId: `p${index}` }));
+    expect(printedPlaces(many, new Set())).toEqual(many);
+  });
+
+  it('prints only the ticked établissements when some are ticked, in the list’s order', () => {
+    expect(printedPlaces(listed, new Set(['c', 'a'])).map((printed) => printed.placeId)).toEqual(['a', 'c']);
+  });
+
+  it('never prints a ticked établissement the filtered list no longer holds', () => {
+    expect(printedPlaces(listed, new Set(['b', 'gone'])).map((printed) => printed.placeId)).toEqual(['b']);
+  });
+});
+
+describe('printedDocument', () => {
+  const producedAt = new Date(2026, 8, 27, 14, 5);
+
+  it('carries each printed établissement’s name, address, commune, type, statut and sale amount', () => {
+    const sold = place({ placeId: 'a', status: 'sold', saleAmount: 90 });
+    const [row] = printedDocument([sold], new Set(), producedAt).rows;
+    expect(row).toMatchObject({ name: 'Boulangerie du Port', address: '12 quai du Port, 83270 Saint-Cyr-sur-Mer', city: 'Saint-Cyr-sur-Mer', type: 'bakery', statusLabel: 'Vendu' });
+    expect(row.saleAmount.replace(/\s/g, ' ')).toBe('90,00 €');
+  });
+
+  it('states when it was produced and how many établissements it covers', () => {
+    const listed = [place({ placeId: 'a' }), place({ placeId: 'b' })];
+    expect(printedDocument(listed, new Set(), producedAt).caption).toBe('2 établissements · édité le 27 septembre 2026 à 14:05');
+    expect(printedDocument(listed, new Set(['a']), producedAt).caption).toBe('1 établissement · édité le 27 septembre 2026 à 14:05');
   });
 });

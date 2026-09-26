@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#101828" />
     <title>NFC Prospection · Prospection</title>
-    <link rel="stylesheet" href="styles.css?v=47" />
+    <link rel="stylesheet" href="styles.css?v=48" />
   </head>
   <body data-requires-auth data-page="prospection">
     <div id="app-shell">
@@ -76,6 +76,7 @@
             <p class="dashboard-summary-line">
               <span id="dashboard-summary"></span>
               <button id="dashboard-filters-reset" class="dashboard-filters-reset hidden" type="button">Réinitialiser les filtres</button>
+              <button id="dashboard-print" class="dashboard-print" type="button" title="Imprimer la sélection, ou à défaut tous les établissements filtrés — « Enregistrer au format PDF » dans la fenêtre d’impression pour un PDF">Imprimer / PDF</button>
             </p>
           </div>
           <div class="dashboard-list-section">
@@ -120,6 +121,15 @@
         </section>
       </main>
     </div>
+
+    <section id="dashboard-print-sheet" class="dashboard-print-sheet" aria-hidden="true">
+      <h1>NFC Prospection · Mes établissements</h1>
+      <p id="dashboard-print-caption"></p>
+      <table>
+        <thead><tr><th scope="col">Établissement</th><th scope="col">Commune</th><th scope="col">Type</th><th scope="col">Statut</th><th scope="col" class="amount">Vente</th></tr></thead>
+        <tbody id="dashboard-print-rows"></tbody>
+      </table>
+    </section>
 
     <template id="place-item-template">
       <article class="place-item">

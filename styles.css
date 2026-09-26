@@ -111,3 +111,29 @@ body[data-requires-auth] { visibility:hidden; }
 .dashboard-grid .select-cell input { width:16px; height:16px; margin:0; accent-color:var(--brand); cursor:pointer; }
 .dashboard-grid tbody tr.is-selected { background:#fff7f3; }
 @media (max-width:760px) { .dashboard-bulk-status { margin-left:0; } }
+.dashboard-print { margin-left:auto; min-height:30px; padding:0 10px; border:1px solid #d7dce5; border-radius:8px; background:#fff; color:#344054; font-size:12px; font-weight:750; }
+/*
+ * The Tableau de bord's print / PDF export. There is deliberately no PDF library: the browser's
+ * print dialog already offers « Enregistrer au format PDF ». Loading one from a CDN at click time
+ * would run unpinned third-party code in a page holding a Supabase session, and bundling one would
+ * put it in the page script everyone downloads (the auth gate injects each page's script as a
+ * classic script, ADR-0004, so it can't be split out and loaded lazily). The choice is local to
+ * reverse: swapping in a bundled library would touch only this export.
+ *
+ * While printing the Tableau de bord, the page is replaced by #dashboard-print-sheet — built from
+ * the list in memory just before printing — so the map, the sidebar and the app chrome stay out.
+ */
+.dashboard-print-sheet { display:none; }
+@media print {
+  body.printing-dashboard { background:#fff; }
+  body.printing-dashboard #app-shell { display:none; }
+  body.printing-dashboard .dashboard-print-sheet { display:block; color:#000; font-size:10pt; }
+  .dashboard-print-sheet h1 { margin:0 0 4pt; font-size:15pt; }
+  .dashboard-print-sheet p { margin:0 0 10pt; color:#444; }
+  .dashboard-print-sheet table { width:100%; border-collapse:collapse; }
+  .dashboard-print-sheet thead { display:table-header-group; }
+  .dashboard-print-sheet tr { break-inside:avoid; }
+  .dashboard-print-sheet th, .dashboard-print-sheet td { padding:4pt 6pt; border-bottom:1px solid #ccc; text-align:left; vertical-align:top; }
+  .dashboard-print-sheet small { display:block; color:#444; }
+  .dashboard-print-sheet .amount { text-align:right; white-space:nowrap; }
+}
