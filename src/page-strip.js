@@ -6,7 +6,7 @@
 /**
  * The entries of a Précédent / page numbers / Suivant strip for `page` of `totalPages`: the
  * first and last pages and the current page with its two neighbours, with a gap wherever
- * numbers are skipped. That caps the strip at seven numbers, however many pages there are.
+ * numbers are skipped. That caps the strip at five numbers, however many pages there are.
  * A single page (or none) yields no strip at all.
  *
  * @param {{ page: number, totalPages: number }} position

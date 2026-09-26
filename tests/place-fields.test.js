@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { placeCity, placeType } from '../src/place-fields.js';
+import { placeCity, placeType, placeTypeLabel } from '../src/place-fields.js';
 
 describe('placeCity', () => {
   it('reads the commune out of a French address ending in the postcode and town', () => {
@@ -82,5 +82,11 @@ describe('placeType', () => {
   it('falls back to Autre when there are no types at all', () => {
     expect(placeType({})).toBe('Autre');
     expect(placeType({ types: [] })).toBe('Autre');
+  });
+});
+
+describe('placeTypeLabel', () => {
+  it('reads a Google type as words', () => {
+    expect(placeTypeLabel({ types: ['point_of_interest', 'real_estate_agency'] })).toBe('real estate agency');
   });
 });

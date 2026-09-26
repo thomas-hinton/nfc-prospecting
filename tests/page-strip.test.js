@@ -26,10 +26,10 @@ describe('pageStrip', () => {
     expect(read(pageStrip({ page: 8, totalPages: 16 }))).toBe('‹7 1 … 7 [8] 9 … 16 ›9');
   });
 
-  it('never shows more than seven page numbers, however many pages there are', () => {
+  it('never shows more than five page numbers, however many pages there are', () => {
     for (let page = 1; page <= 400; page++) {
       const numbers = pageStrip({ page, totalPages: 400 }).filter((entry) => entry.kind === 'page');
-      expect(numbers.length).toBeLessThanOrEqual(7);
+      expect(numbers.length).toBeLessThanOrEqual(5);
     }
   });
 

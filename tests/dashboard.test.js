@@ -21,7 +21,7 @@ describe('dashboardRow', () => {
       placeId: 'place-1',
       name: 'Boulangerie du Port',
       address: '12 quai du Port, 83270 Saint-Cyr-sur-Mer',
-      commune: 'Saint-Cyr-sur-Mer',
+      city: 'Saint-Cyr-sur-Mer',
       type: 'bakery',
       status: 'to_visit',
       statusLabel: 'À visiter',
@@ -44,7 +44,7 @@ describe('dashboardRow', () => {
   });
 
   it('leaves the commune empty when the address yielded none', () => {
-    expect(dashboardRow(place({ city: null })).commune).toBe('');
+    expect(dashboardRow(place({ city: null })).city).toBe('');
   });
 
   it('reads the type as words, falling back to Autre when Google gave nothing distinctive', () => {

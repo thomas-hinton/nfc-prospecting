@@ -47,7 +47,6 @@ body[data-requires-auth] { visibility:hidden; }
 @media (max-width:620px) { .sign-out-link { top:12px; right:118px; } }
 /* Prospection page: map ⇄ Tableau de bord switcher, and the table that covers the map area. */
 .page-strip { display:flex; align-items:center; gap:5px; overflow:auto; }
-.page-strip span { color:var(--muted); }
 .view-switch { display:flex; gap:2px; padding:3px; border-radius:9px; background:#1d2939; }
 .view-switch button { padding:6px 11px; border:0; border-radius:7px; background:transparent; color:#cfd6e1; font-size:12px; font-weight:750; }
 .view-switch button[aria-pressed="true"] { background:#fff; color:var(--ink); }

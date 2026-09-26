@@ -1,5 +1,5 @@
 import { STATUS_LABELS, euros } from './store.js';
-import { placeType } from './place-fields.js';
+import { placeTypeLabel } from './place-fields.js';
 
 /**
  * The Tableau de bord's decision logic, as pure functions over plain établissement objects
@@ -9,15 +9,15 @@ import { placeType } from './place-fields.js';
 
 /**
  * What one table row shows for `place`, already formatted for display. The sale amount is
- * only shown for a vendu établissement; a missing commune is left empty.
+ * only shown for a vendu établissement; a missing commune (`city`) is left empty.
  */
 export function dashboardRow(place) {
   return {
     placeId: place.placeId,
     name: place.name,
     address: place.address,
-    commune: place.city ?? '',
-    type: placeType(place).replaceAll('_', ' '),
+    city: place.city ?? '',
+    type: placeTypeLabel(place),
     status: place.status,
     statusLabel: STATUS_LABELS[place.status] ?? place.status,
     saleAmount: place.status === 'sold' ? euros(place.saleAmount) : '',

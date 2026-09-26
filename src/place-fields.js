@@ -52,3 +52,8 @@ const GENERIC_TYPES = new Set(['point_of_interest', 'establishment', 'food', 'st
 export function placeType(place) {
   return (place.types || []).find((type) => !GENERIC_TYPES.has(type)) || 'Autre';
 }
+
+/** The établissement's type as displayed: Google's `real_estate_agency` reads "real estate agency". */
+export function placeTypeLabel(place) {
+  return placeType(place).replaceAll('_', ' ');
+}

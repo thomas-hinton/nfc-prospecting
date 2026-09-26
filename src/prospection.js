@@ -1,7 +1,7 @@
 import { bootstrapStore } from './bootstrap.js';
 import { readConfig } from './supabase-client.js';
 import { STATUS_LABELS, euros } from './store.js';
-import { placeType } from './place-fields.js';
+import { placeTypeLabel } from './place-fields.js';
 import { dashboardPage } from './dashboard.js';
 import { renderPageStrip } from './page-strip.js';
 
@@ -115,19 +115,19 @@ function showView(view) {
 /** Redraws the Tableau de bord from `state.places` — only while it is the view on screen. */
 function renderDashboard() {
   if (state.view !== 'dashboard') return;
-  const view = dashboardPage(state.places, state.dashboard);
-  state.dashboard.page = view.page;
+  const shown = dashboardPage(state.places, state.dashboard);
+  state.dashboard.page = shown.page;
 
-  $('#dashboard-summary').textContent = view.total
-    ? `${view.first}-${view.last} sur ${view.total} établissement${view.total > 1 ? 's' : ''} suivi${view.total > 1 ? 's' : ''}`
+  $('#dashboard-summary').textContent = shown.total
+    ? `${shown.first}-${shown.last} sur ${shown.total} établissement${shown.total > 1 ? 's' : ''} suivi${shown.total > 1 ? 's' : ''}`
     : 'Aucun établissement suivi pour le moment.';
 
   const body = $('#dashboard-rows');
-  body.innerHTML = view.rows.length
-    ? view.rows
+  body.innerHTML = shown.rows.length
+    ? shown.rows
         .map(
           (row) =>
-            `<tr data-id="${escapeHtml(row.placeId)}"><td><button type="button">${escapeHtml(row.name)}</button><small>${escapeHtml(row.address)}</small></td><td>${escapeHtml(row.commune) || '—'}</td><td>${escapeHtml(row.type)}</td><td><span class="status-dot ${escapeHtml(row.status)}"></span>${escapeHtml(row.statusLabel)}</td><td class="amount">${escapeHtml(row.saleAmount)}</td></tr>`
+            `<tr data-id="${escapeHtml(row.placeId)}"><td><button type="button">${escapeHtml(row.name)}</button><small>${escapeHtml(row.address)}</small></td><td>${escapeHtml(row.city) || '—'}</td><td>${escapeHtml(row.type)}</td><td><span class="status-dot ${escapeHtml(row.status)}"></span>${escapeHtml(row.statusLabel)}</td><td class="amount">${escapeHtml(row.saleAmount)}</td></tr>`
         )
         .join('')
     : '<tr><td class="dashboard-empty" colspan="5">Tes établissements suivis apparaîtront ici.</td></tr>';
@@ -139,8 +139,8 @@ function renderDashboard() {
   });
 
   renderPageStrip($('#dashboard-page-strip'), {
-    page: view.page,
-    totalPages: view.totalPages,
+    page: shown.page,
+    totalPages: shown.totalPages,
     onSelect: (page) => {
       state.dashboard.page = page;
       renderDashboard();
@@ -291,7 +291,7 @@ function renderDetail(place) {
     (status) =>
       `<button data-status="${status}" type="button" class="${place.status === status ? 'selected-' + status : ''}">${STATUS_LABELS[status]}</button>`
   ).join('');
-  card.innerHTML = `<button class="close-detail" type="button" aria-label="Fermer">×</button><h2>${escapeHtml(place.name)}</h2><p>${escapeHtml(place.address)}</p><div class="place-type">${escapeHtml(placeType(place).replaceAll('_', ' '))}</div>${saleBlock}<div class="status-select">${statusButtons}</div><div class="link-actions"><button data-action="copy" type="button">Copier le lien NFC</button><button data-action="open" type="button">Ouvrir la fiche Google</button></div><code class="place-id">Place ID : ${escapeHtml(place.placeId)}</code>`;
+  card.innerHTML = `<button class="close-detail" type="button" aria-label="Fermer">×</button><h2>${escapeHtml(place.name)}</h2><p>${escapeHtml(place.address)}</p><div class="place-type">${escapeHtml(placeTypeLabel(place))}</div>${saleBlock}<div class="status-select">${statusButtons}</div><div class="link-actions"><button data-action="copy" type="button">Copier le lien NFC</button><button data-action="open" type="button">Ouvrir la fiche Google</button></div><code class="place-id">Place ID : ${escapeHtml(place.placeId)}</code>`;
 
   card.querySelector('.close-detail').onclick = () => {
     state.selectedId = null;
@@ -605,6 +605,9 @@ async function initMap(googleMapsApiKey) {
     mapTypeControl: false,
     fullscreenControl: false,
   });
+  // The markers drawn depend on the frame, so redraw once the map settles after any pan or
+  // zoom — including the pan to an établissement picked from the list or the Tableau de bord.
+  state.map.addListener('idle', renderMarkers);
   renderMarkers();
 }
 
