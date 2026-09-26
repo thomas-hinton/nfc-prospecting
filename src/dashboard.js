@@ -145,3 +145,42 @@ export function sortPlaces(places, { key, direction = 'asc' }) {
   const sign = direction === 'desc' ? -1 : 1;
   return [...places].sort((a, b) => sign * compare(a, b));
 }
+
+/** `amount` in euros rounded to the cent, so summing prices doesn't drift (0.1 + 0.2). */
+const toCents = (amount) => Math.round(Number(amount || 0) * 100);
+
+/**
+ * The Tableau de bord's metrics over the établissements `places` leaves under `filters` — the
+ * filtered set, not the whole tracked list, so filtering to a commune reads "what have I sold
+ * there, and what is left to do there". `scope` names that set ("Tous les établissements
+ * suivis", or the chosen commune · type · statut), so a filtered figure can't be read as an
+ * overall total; `filtered` says whether any filter narrows it.
+ *
+ * `revenue` is what the vendu établissements were sold for. `potentiel` is an estimate, not
+ * revenue: the programmé and à-visiter établissements priced at the configured `salePrice`
+ * (see CONTEXT.md), so it moves with that price — and is null while the price is unknown.
+ */
+export function dashboardMetrics(places, { filters = {}, salePrice }) {
+  const { city = null, type = null, status = null } = filters;
+  const listed = places.filter((place) => matchesFilters(place, filters));
+  const counted = (wanted) => listed.filter((place) => place.status === wanted);
+  const sold = counted('sold');
+  const scheduled = counted('scheduled').length;
+  const toVisit = counted('to_visit').length;
+  const scope = [
+    city == null ? null : city === NO_CITY ? 'Sans commune' : city,
+    type == null ? null : placeTypeLabel({ types: [type] }),
+    status == null ? null : (STATUS_LABELS[status] ?? status),
+  ].filter((part) => part != null);
+  return {
+    scope: scope.length ? scope.join(' · ') : 'Tous les établissements suivis',
+    filtered: scope.length > 0,
+    count: listed.length,
+    sold: sold.length,
+    revenue: sold.reduce((sum, place) => sum + toCents(place.saleAmount), 0) / 100,
+    refused: counted('refused').length,
+    scheduled,
+    toVisit,
+    potentiel: salePrice == null ? null : ((scheduled + toVisit) * toCents(salePrice)) / 100,
+  };
+}

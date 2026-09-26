@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { NO_CITY, SORT_COMPARATORS, dashboardPage, dashboardRow, filterMenus, matchesFilters, sortPlaces } from '../src/dashboard.js';
+import { NO_CITY, SORT_COMPARATORS, dashboardMetrics, dashboardPage, dashboardRow, filterMenus, matchesFilters, sortPlaces } from '../src/dashboard.js';
 
 function place(overrides = {}) {
   return {
@@ -278,5 +278,91 @@ describe('SORT_COMPARATORS', () => {
     expect(sortedWith(SORT_COMPARATORS.name, names)).toEqual(['a', 'b']);
     const dates = [place({ placeId: 'late', createdAt: '2026-09-10T00:00:00Z' }), place({ placeId: 'early', createdAt: '2026-09-01T00:00:00Z' })];
     expect(sortedWith(SORT_COMPARATORS.createdAt, dates)).toEqual(['early', 'late']);
+  });
+});
+
+describe('dashboardMetrics', () => {
+  const tracked = [
+    place({ placeId: 'a', city: 'Bandol', types: ['bakery'], status: 'sold', saleAmount: 50 }),
+    place({ placeId: 'b', city: 'Bandol', types: ['restaurant'], status: 'sold', saleAmount: 120.1 }),
+    place({ placeId: 'c', city: 'Bandol', types: ['bakery'], status: 'refused', saleAmount: 50 }),
+    place({ placeId: 'd', city: 'Bandol', types: ['bakery'], status: 'scheduled' }),
+    place({ placeId: 'e', city: 'Bandol', types: ['bakery'], status: 'to_visit' }),
+    place({ placeId: 'f', city: 'Toulon', types: ['bakery'], status: 'sold', saleAmount: 0.2 }),
+    place({ placeId: 'g', city: 'Toulon', types: ['bakery'], status: 'to_visit' }),
+    place({ placeId: 'h', city: 'Toulon', types: ['bakery'], status: 'to_visit' }),
+    place({ placeId: 'i', city: null, types: ['hair_care'], status: 'non_compliant' }),
+  ];
+
+  it('reads the whole tracked list when no filter is chosen', () => {
+    expect(dashboardMetrics(tracked, { filters: {}, salePrice: 50 })).toMatchObject({
+      scope: 'Tous les établissements suivis',
+      filtered: false,
+      count: 9,
+      sold: 3,
+      revenue: 170.3,
+      refused: 1,
+      scheduled: 1,
+      toVisit: 3,
+      potentiel: 200,
+    });
+  });
+
+  it('reads only the filtered set: what is sold there, and what is left to do there', () => {
+    expect(dashboardMetrics(tracked, { filters: { city: 'Toulon' }, salePrice: 50 })).toMatchObject({
+      filtered: true,
+      count: 3,
+      sold: 1,
+      revenue: 0.2,
+      refused: 0,
+      scheduled: 0,
+      toVisit: 2,
+      potentiel: 100,
+    });
+    expect(dashboardMetrics(tracked, { filters: { city: 'Bandol', type: 'bakery' }, salePrice: 50 })).toMatchObject({
+      count: 4,
+      sold: 1,
+      revenue: 50,
+      refused: 1,
+      scheduled: 1,
+      toVisit: 1,
+      potentiel: 100,
+    });
+  });
+
+  it('names the set it covers, so a filtered figure is not mistaken for an overall total', () => {
+    const scope = (filters) => dashboardMetrics(tracked, { filters, salePrice: 50 }).scope;
+    expect(scope({ city: 'Toulon' })).toBe('Toulon');
+    expect(scope({ city: NO_CITY, type: 'hair_care', status: 'non_compliant' })).toBe('Sans commune · hair care · Non conforme');
+    expect(scope({ status: 'to_visit' })).toBe('À visiter');
+  });
+
+  it('prices the potentiel at the configured sale price, so it moves when that price changes', () => {
+    const potentiel = (salePrice) => dashboardMetrics(tracked, { filters: {}, salePrice }).potentiel;
+    expect(potentiel(50)).toBe(200);
+    expect(potentiel(79.9)).toBe(319.6);
+    expect(potentiel(0)).toBe(0);
+  });
+
+  it('counts only what a vendu établissement was actually sold for, never a past sale of a reopened one', () => {
+    expect(dashboardMetrics(tracked, { filters: { status: 'refused' }, salePrice: 50 })).toMatchObject({ sold: 0, revenue: 0 });
+  });
+
+  it('has no potentiel when the sale price is unknown', () => {
+    expect(dashboardMetrics(tracked, { filters: {}, salePrice: null }).potentiel).toBeNull();
+  });
+
+  it('reads all zeros when nothing is tracked', () => {
+    expect(dashboardMetrics([], { filters: {}, salePrice: 50 })).toEqual({
+      scope: 'Tous les établissements suivis',
+      filtered: false,
+      count: 0,
+      sold: 0,
+      revenue: 0,
+      refused: 0,
+      scheduled: 0,
+      toVisit: 0,
+      potentiel: 0,
+    });
   });
 });

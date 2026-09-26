@@ -2,7 +2,7 @@ import { bootstrapStore } from './bootstrap.js';
 import { readConfig } from './supabase-client.js';
 import { STATUS_LABELS, euros } from './store.js';
 import { placeTypeLabel } from './place-fields.js';
-import { dashboardPage, filterMenus, matchesFilters, sortPlaces } from './dashboard.js';
+import { dashboardMetrics, dashboardPage, filterMenus, matchesFilters, sortPlaces } from './dashboard.js';
 import { renderPageStrip } from './page-strip.js';
 
 /**
@@ -57,6 +57,8 @@ const state = {
   selectedId: null,
   mapUnavailable: false,
   view: 'map',
+  /** The configured sale price the potentiel is estimated at; null until read (or if it can't be). */
+  salePrice: null,
   dashboard: {
     page: 1,
     pageSize: 25,
@@ -142,6 +144,43 @@ function showView(view) {
   $('#dashboard-panel').classList.toggle('hidden', view !== 'dashboard');
   $('#map-list-section').classList.toggle('hidden', view !== 'map');
   renderDashboard();
+  // The sale price may have been changed in the settings since it was last read: re-read it, so the potentiel follows.
+  if (view === 'dashboard') loadSalePrice().then(renderDashboard);
+}
+
+/** Reads the configured sale price into `state.salePrice`, keeping the last one read if it can't. */
+async function loadSalePrice() {
+  try {
+    state.salePrice = (await store.getSettings()).salePrice;
+  } catch (error) {
+    console.error(error);
+  }
+}
+
+/** Redraws the Tableau de bord's metric cards over the filtered set, named by its `scope` (see `dashboardMetrics`). */
+function renderDashboardMetrics(filters) {
+  const metrics = dashboardMetrics(state.places, { filters, salePrice: state.salePrice });
+  $('#dashboard-metrics-scope').textContent = metrics.filtered
+    ? `Chiffres de la sélection : ${metrics.scope}`
+    : `Chiffres sur ${metrics.scope.toLowerCase()}`;
+  const card = (modifier, label, value, note = '') =>
+    `<div class="metric ${modifier}"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong>${note ? `<small>${escapeHtml(note)}</small>` : ''}</div>`;
+  const pipeline = metrics.scheduled + metrics.toVisit;
+  $('#dashboard-metrics').innerHTML = [
+    card('total', 'Établissements', metrics.count),
+    card('sold', 'Vendus', metrics.sold, `${euros(metrics.revenue)} de chiffre d’affaires`),
+    card('refused', 'Refusés', metrics.refused),
+    card('scheduled', 'Programmés pour visite', metrics.scheduled),
+    card('visit', 'À visiter', metrics.toVisit),
+    card(
+      'potentiel',
+      'Potentiel estimé',
+      metrics.potentiel == null ? '—' : `≈ ${euros(metrics.potentiel)}`,
+      metrics.potentiel == null
+        ? 'Prix de vente indisponible'
+        : `Estimation : ${pipeline} à visiter ou programmé${pipeline > 1 ? 's' : ''} × ${euros(state.salePrice)}, pas un chiffre d’affaires`
+    ),
+  ].join('');
 }
 
 /** Fills `select` with an "all" entry (value "") then `options` (greyed out when `disabled`), and selects `value` (null for "all"). */
@@ -177,6 +216,7 @@ function renderDashboard() {
   const menus = filterMenus(state.places, state.dashboard.filters);
   state.dashboard.filters = menus.filters;
   renderDashboardControls(menus);
+  renderDashboardMetrics(menus.filters);
   const listed = sortPlaces(
     state.places.filter((place) => matchesFilters(place, menus.filters)),
     state.dashboard.sort
@@ -755,10 +795,13 @@ async function start() {
   $('#city-form').addEventListener('submit', onCenterSubmit);
   $('#scan-button').addEventListener('click', onScanZone);
 
-  state.places = await store.listPlaces().catch((error) => {
-    console.error(error);
-    return [];
-  });
+  [state.places] = await Promise.all([
+    store.listPlaces().catch((error) => {
+      console.error(error);
+      return [];
+    }),
+    loadSalePrice(),
+  ]);
   renderPlaces();
 
   await initMap(config.googleMapsApiKey);

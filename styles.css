@@ -68,3 +68,13 @@ body[data-requires-auth] { visibility:hidden; }
 .dashboard-sort { display:flex; gap:6px; min-width:0; }
 .dashboard-sort button { flex:none; height:36px; padding:0 10px; border:1px solid #d8dee8; border-radius:8px; background:#fff; color:#344054; font-size:12px; font-weight:700; white-space:nowrap; }
 @media (max-width:760px) { .dashboard-controls { grid-template-columns:minmax(0,1fr); } }
+.dashboard-metrics { margin-bottom:23px; }
+.dashboard-metrics-scope { margin:0 0 9px; color:#475467; font-size:12px; font-weight:800; }
+.dashboard-metric-grid { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:10px; }
+.dashboard-metric-grid .metric strong { font-size:26px; }
+.metric.total { border-top:4px solid #475467; }
+.metric.potentiel { border:1px dashed #b8c0cc; border-top:4px dashed #b8c0cc; background:#fbfcfd; }
+.metric.potentiel strong { color:#475467; }
+.metric.potentiel small { color:var(--muted); font-weight:600; font-style:italic; }
+@media (max-width:1100px) { .dashboard-metric-grid { grid-template-columns:repeat(3,minmax(0,1fr)); } }
+@media (max-width:760px) { .dashboard-metric-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .dashboard-metric-grid .metric { padding:12px; } .dashboard-metric-grid .metric strong { font-size:22px; } }
