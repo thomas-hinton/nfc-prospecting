@@ -63,7 +63,7 @@ body[data-requires-auth] { visibility:hidden; }
 .dashboard-grid .dashboard-empty { padding:24px; color:var(--muted); text-align:center; cursor:default; }
 @media (max-width:760px) { .view-switch button { padding:6px 8px; } .dashboard-panel { padding:18px; } }
 .dashboard-controls { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)) minmax(0,1.4fr); gap:10px; margin-bottom:16px; }
-.dashboard-controls label { display:grid; gap:5px; min-width:0; color:var(--muted); font-size:11px; font-weight:800; }
+.dashboard-controls label, .dashboard-sort-field { display:grid; gap:5px; min-width:0; color:var(--muted); font-size:11px; font-weight:800; }
 .dashboard-controls select { min-width:0; width:100%; height:36px; padding:0 8px; border:1px solid #d8dee8; border-radius:8px; background:#fff; color:#344054; font-size:12px; }
 .dashboard-sort { display:flex; gap:6px; min-width:0; }
 .dashboard-sort button { flex:none; height:36px; padding:0 10px; border:1px solid #d8dee8; border-radius:8px; background:#fff; color:#344054; font-size:12px; font-weight:700; white-space:nowrap; }

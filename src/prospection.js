@@ -184,7 +184,9 @@ function renderDashboard() {
   const range = `${shown.first}-${shown.last} sur ${shown.total} établissement${plural(shown.total)}`;
   $('#dashboard-summary').textContent = !tracked
     ? 'Aucun établissement suivi pour le moment.'
-    : shown.total === tracked
+    : !shown.total
+      ? `Aucun établissement ne correspond à ces filtres (sur ${tracked} suivi${plural(tracked)}).`
+      : shown.total === tracked
       ? `${range} suivi${plural(tracked)}`
       : `${range} (sur ${tracked} suivi${plural(tracked)})`;
 
@@ -721,28 +723,20 @@ async function start() {
     state.dashboard.page = 1;
     renderDashboard();
   });
-  [
-    ['#dashboard-city', 'city'],
-    ['#dashboard-type', 'type'],
-    ['#dashboard-status', 'status'],
-  ].forEach(([selector, filter]) => {
-    $(selector).addEventListener('change', (event) => {
-      state.dashboard.filters = { ...state.dashboard.filters, [filter]: event.target.value || null };
-      state.dashboard.page = 1;
-      renderDashboard();
-    });
-  });
-  $('#dashboard-sort').addEventListener('change', (event) => {
-    state.dashboard.sort = { ...state.dashboard.sort, key: event.target.value };
+  /** Applies a filter or sort change to the Tableau de bord and redraws it from its first page. */
+  const narrowDashboard = ({ filters = {}, sort = {} }) => {
+    state.dashboard.filters = { ...state.dashboard.filters, ...filters };
+    state.dashboard.sort = { ...state.dashboard.sort, ...sort };
     state.dashboard.page = 1;
     renderDashboard();
+  };
+  ['city', 'type', 'status'].forEach((filter) => {
+    $(`#dashboard-${filter}`).addEventListener('change', (event) => narrowDashboard({ filters: { [filter]: event.target.value || null } }));
   });
-  $('#dashboard-sort-direction').addEventListener('click', () => {
-    const { direction } = state.dashboard.sort;
-    state.dashboard.sort = { ...state.dashboard.sort, direction: direction === 'asc' ? 'desc' : 'asc' };
-    state.dashboard.page = 1;
-    renderDashboard();
-  });
+  $('#dashboard-sort').addEventListener('change', (event) => narrowDashboard({ sort: { key: event.target.value } }));
+  $('#dashboard-sort-direction').addEventListener('click', () =>
+    narrowDashboard({ sort: { direction: state.dashboard.sort.direction === 'asc' ? 'desc' : 'asc' } })
+  );
 
   if (!config.googleMapsApiKey) {
     $('#map-placeholder-text').textContent = 'Clé Google Maps manquante pour ce déploiement.';

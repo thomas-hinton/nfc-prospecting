@@ -79,7 +79,8 @@
               <label>Commune <select id="dashboard-city"></select></label>
               <label>Type <select id="dashboard-type"></select></label>
               <label>Statut <select id="dashboard-status"></select></label>
-              <label>Trier par
+              <div class="dashboard-sort-field">
+                <label for="dashboard-sort">Trier par</label>
                 <span class="dashboard-sort">
                   <select id="dashboard-sort">
                     <option value="name">Nom</option>
@@ -91,7 +92,7 @@
                   </select>
                   <button id="dashboard-sort-direction" type="button"></button>
                 </span>
-              </label>
+              </div>
             </div>
             <div class="dashboard-table-scroll">
               <table class="dashboard-grid">

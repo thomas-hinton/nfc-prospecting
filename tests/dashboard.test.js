@@ -130,6 +130,10 @@ describe('filterMenus', () => {
     ]);
   });
 
+  it('offers no "sans commune" entry when every établissement has a commune', () => {
+    expect(values(filterMenus(tracked.filter((item) => item.city), {}).cities)).toEqual(['Bandol', 'Évenos', 'Saint-Cyr-sur-Mer']);
+  });
+
   it('offers every type as words, French-collated, when nothing is chosen', () => {
     expect(filterMenus(tracked, {}).types).toEqual([
       { value: 'bakery', label: 'bakery' },
@@ -220,7 +224,10 @@ describe('sortPlaces', () => {
 
   it('offers every sort descending too', () => {
     expect(order({ key: 'name', direction: 'desc' })).toEqual(['d', 'a', 'b', 'c']);
+    expect(order({ key: 'type', direction: 'desc' })).toEqual(['b', 'c', 'd', 'a']);
+    expect(order({ key: 'status', direction: 'desc' })).toEqual(['b', 'c', 'd', 'a']);
     expect(order({ key: 'createdAt', direction: 'desc' })).toEqual(['c', 'd', 'a', 'b']);
+    expect(order({ key: 'statusChangedAt', direction: 'desc' })).toEqual(['d', 'a', 'c', 'b']);
   });
 
   it('keeps établissements that tie in the order they were given', () => {
@@ -234,8 +241,14 @@ describe('sortPlaces', () => {
 });
 
 describe('SORT_COMPARATORS', () => {
-  it('puts an établissement with no commune after every commune', () => {
-    const list = [place({ placeId: 'x', city: null }), place({ placeId: 'y', city: 'Toulon' }), place({ placeId: 'z', city: 'Bandol' })];
-    expect([...list].sort(SORT_COMPARATORS.city).map((item) => item.placeId)).toEqual(['z', 'y', 'x']);
+  const list = [place({ placeId: 'x', city: null }), place({ placeId: 'y', city: 'Toulon' }), place({ placeId: 'z', city: 'Bandol' })];
+
+  it('offers one comparator per sort of the Tableau de bord', () => {
+    expect(Object.keys(SORT_COMPARATORS).sort()).toEqual(['city', 'createdAt', 'name', 'status', 'statusChangedAt', 'type']);
+  });
+
+  it('lists the établissements with no commune after every commune, and first when sorting descending', () => {
+    expect(sortPlaces(list, { key: 'city', direction: 'asc' }).map((item) => item.placeId)).toEqual(['z', 'y', 'x']);
+    expect(sortPlaces(list, { key: 'city', direction: 'desc' }).map((item) => item.placeId)).toEqual(['x', 'y', 'z']);
   });
 });

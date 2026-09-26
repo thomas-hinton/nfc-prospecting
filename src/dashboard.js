@@ -41,7 +41,7 @@ export function dashboardPage(places, { page: requestedPage, pageSize }) {
 /**
  * The commune filter's value for "sans commune": the établissements whose address yielded no
  * commune (`city` unset), grouped under an explicit entry rather than silently dropped. Not a
- * name `placeCity` can produce, so it never collides with a real commune.
+ * name `placeCity` can produce, nor one a hand correction would plausibly type.
  */
 export const NO_CITY = '(sans commune)';
 
@@ -88,20 +88,18 @@ function cityOptions(places) {
  * an empty stage shows at zero and the commune's whole pipeline reads at a glance.
  */
 export function filterMenus(places, { city = null, type = null, status = null } = {}) {
-  const typeLabel = (place) => placeTypeLabel(place);
-  const citiesUnder = (filters) => cityOptions(places.filter((place) => matchesFilters(place, filters)));
-  const typesUnder = (filters) => menuOptions(places.filter((place) => matchesFilters(place, filters)), placeType, typeLabel);
+  const under = (filters) => places.filter((place) => matchesFilters(place, filters));
   const yieldsAny = (filters) => places.some((place) => matchesFilters(place, filters));
 
   if (!yieldsAny({ city, status })) city = null;
   if (!yieldsAny({ type, status })) type = null;
   if (!yieldsAny({ city, type, status })) type = null;
 
-  const counted = places.filter((place) => matchesFilters(place, { city, type }));
+  const counted = under({ city, type });
   return {
     filters: { city, type, status },
-    cities: citiesUnder({ type, status }),
-    types: typesUnder({ city, status }),
+    cities: cityOptions(under({ type, status })),
+    types: menuOptions(under({ city, status }), placeType, placeTypeLabel),
     statuses: Object.entries(STATUS_LABELS).map(([value, label]) => ({
       value,
       label,
@@ -116,7 +114,8 @@ const byDate = (dateOf) => (a, b) => (Date.parse(dateOf(a)) || 0) - (Date.parse(
 /**
  * The Tableau de bord's sorts, each an ascending comparator over two établissements. Text is
  * French-collated — accents and case ignored, "Atelier 9" before "Atelier 10" — and a statut
- * or type is compared as displayed. An établissement with no commune sorts after every commune.
+ * or type is compared as displayed. An établissement with no commune sorts after every commune
+ * (ascending; `sortPlaces` reverses the whole order for descending, so it then comes first).
  */
 export const SORT_COMPARATORS = {
   name: byText((place) => place.name ?? ''),
