@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createStore } from '../src/store.js';
 import { createFakeSupabase } from './fake-supabase.js';
-import { chooseVisibleMarkers, runZoneScan, zoneCells } from '../src/prospection.js';
+import { chooseVisibleMarkers, placesOnMap, runZoneScan, zoneCells } from '../src/prospection.js';
 
 const account = { email: 'prospecteur@example.com', password: 'correct-horse', id: 'user-1' };
 
@@ -81,6 +81,60 @@ describe('chooseVisibleMarkers', () => {
     const targetId = places[150].placeId;
     const displayed = chooseVisibleMarkers(places, fakeBounds(), targetId);
     expect(displayed.some((p) => p.placeId === targetId)).toBe(true);
+  });
+});
+
+describe('placesOnMap', () => {
+  function place(overrides = {}) {
+    return { placeId: `place-${Math.random()}`, status: 'to_visit', lat: 43.18, lng: 5.71, ...overrides };
+  }
+
+  function denseZone(count) {
+    return Array.from({ length: count }, (_, index) => place({ placeId: `place-${index}`, lat: 43.17 + (index % 20) * 0.001, lng: 5.7 + Math.floor(index / 20) * 0.001 }));
+  }
+
+  it('shows the établissements inside the map frame, leaving out those outside it', () => {
+    const inside = place({ placeId: 'inside' });
+    const north = place({ placeId: 'north', lat: 43.5 });
+    const east = place({ placeId: 'east', lng: 6.2 });
+
+    const { inFrame, shown } = placesOnMap([inside, north, east], fakeBounds());
+
+    expect(inFrame.map((p) => p.placeId)).toEqual(['inside']);
+    expect(shown.map((p) => p.placeId)).toEqual(['inside']);
+  });
+
+  it('leaves out an établissement with no coordinates, since it has no marker', () => {
+    const { inFrame, shown } = placesOnMap([place({ placeId: 'no-coords', lat: null, lng: null })], fakeBounds());
+    expect(inFrame).toEqual([]);
+    expect(shown).toEqual([]);
+  });
+
+  it('counts an établissement on the frame edge as inside it', () => {
+    const { shown } = placesOnMap([place({ lat: 43.19, lng: 5.7 })], fakeBounds());
+    expect(shown).toHaveLength(1);
+  });
+
+  it('follows a frame that straddles the antimeridian', () => {
+    const bounds = fakeBounds({ south: -10, north: 10, west: 170, east: -170 });
+    const places = [place({ placeId: 'west-side', lat: 0, lng: 175 }), place({ placeId: 'east-side', lat: 0, lng: -175 }), place({ placeId: 'outside', lat: 0, lng: 0 })];
+    expect(placesOnMap(places, bounds).shown.map((p) => p.placeId)).toEqual(['west-side', 'east-side']);
+  });
+
+  it('caps what is shown at 250 in a dense zone, while counting every établissement in the frame', () => {
+    const { inFrame, shown } = placesOnMap(denseZone(300), fakeBounds());
+    expect(inFrame).toHaveLength(300);
+    expect(shown).toHaveLength(250);
+  });
+
+  it('keeps the selected établissement shown when the cap would otherwise sample it out', () => {
+    const places = denseZone(300);
+    const { shown } = placesOnMap(places, fakeBounds(), places[150].placeId);
+    expect(shown.some((p) => p.placeId === places[150].placeId)).toBe(true);
+  });
+
+  it('shows nothing before the map has a frame, as no marker is drawn yet', () => {
+    expect(placesOnMap([place()], null)).toEqual({ inFrame: [], shown: [] });
   });
 });
 

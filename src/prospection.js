@@ -11,7 +11,9 @@ import { renderPageStrip } from './page-strip.js';
  * JavaScript call goes through the store's `checkAndConsumeQuota()` first.
  *
  * The map shares its area with a second view, the Tableau de bord: a paginated table of
- * every tracked établissement. Both views draw the same `state.places`, loaded once.
+ * every tracked établissement. Both views draw the same `state.places`, loaded once. The
+ * sidebar list belongs to the map view: it lists exactly the établissements whose markers are
+ * drawn, and is hidden while the Tableau de bord is on screen.
  */
 
 const STATUS_COLORS = { to_visit: '#55a7e8', scheduled: '#e5b72b', sold: '#22a06b', refused: '#e5484d', non_compliant: '#a1a9b7' };
@@ -80,17 +82,28 @@ async function withBusyButton(button, busyLabel, task) {
   }
 }
 
-function renderPlaceList() {
+/** Redraws both views after `state.places` changed. */
+function renderPlaces() {
   renderDashboard();
-  $('#saved-count').textContent = state.places.length;
+  renderMapPlaces();
+}
+
+/** The sidebar list: the établissements `shown` on the map, or why there are none. */
+function renderPlaceList(shown) {
+  $('#map-list-count').textContent = `${shown.length} affiché${shown.length > 1 ? 's' : ''}`;
   const list = $('#place-list');
   list.innerHTML = '';
-  if (!state.places.length) {
-    list.innerHTML = '<p class="empty-list">Tes établissements suivis apparaîtront ici.</p>';
+  if (!shown.length) {
+    const reason = !state.map
+      ? 'Les établissements affichés sur la carte apparaîtront ici.'
+      : state.places.length
+        ? 'Aucun établissement suivi dans cette zone de la carte.'
+        : 'Tes établissements suivis apparaîtront ici.';
+    list.innerHTML = `<p class="empty-list">${reason}</p>`;
     return;
   }
   const template = $('#place-item-template');
-  state.places.forEach((place) => {
+  shown.forEach((place) => {
     const item = template.content.firstElementChild.cloneNode(true);
     item.dataset.id = place.placeId;
     const dot = item.querySelector('.status-dot');
@@ -102,13 +115,14 @@ function renderPlaceList() {
   });
 }
 
-/** Shows the map or the Tableau de bord in the map area; the sidebar stays either way. */
+/** Shows the map or the Tableau de bord in the map area; the sidebar's forms stay either way, its list only with the map. */
 function showView(view) {
   state.view = view;
   document.querySelectorAll('.view-switch [data-view]').forEach((button) => {
     button.setAttribute('aria-pressed', String(button.dataset.view === view));
   });
   $('#dashboard-panel').classList.toggle('hidden', view !== 'dashboard');
+  $('#map-list-section').classList.toggle('hidden', view !== 'map');
   renderDashboard();
 }
 
@@ -206,18 +220,35 @@ export function chooseVisibleMarkers(places, bounds, selectedId = null) {
   return result;
 }
 
-function renderMarkers() {
+/** Whether `place` has coordinates inside `bounds` (edges included, antimeridian-straddling frames too). */
+function inBounds(place, bounds) {
+  if (place.lat == null || place.lng == null) return false;
+  const ne = bounds.getNorthEast();
+  const sw = bounds.getSouthWest();
+  if (place.lat < sw.lat() || place.lat > ne.lat()) return false;
+  return sw.lng() <= ne.lng() ? place.lng >= sw.lng() && place.lng <= ne.lng() : place.lng >= sw.lng() || place.lng <= ne.lng();
+}
+
+/**
+ * The établissements the map view draws for the frame `bounds`: `inFrame` is every one inside
+ * it, `shown` the capped subset that gets a marker — and, the same set, a row in the sidebar
+ * list. No frame yet (the map isn't loaded) means nothing is drawn.
+ */
+export function placesOnMap(places, bounds, selectedId = null) {
+  if (!bounds) return { inFrame: [], shown: [] };
+  const inFrame = places.filter((place) => inBounds(place, bounds));
+  return { inFrame, shown: chooseVisibleMarkers(inFrame, bounds, selectedId) };
+}
+
+/** Redraws the markers and the sidebar list for the current frame — a local redraw, no Supabase or Google request. */
+function renderMapPlaces() {
+  const { inFrame, shown } = placesOnMap(state.places, state.map?.getBounds(), state.selectedId);
+  renderPlaceList(shown);
   if (!state.map || !window.google) return;
   state.markers.forEach((marker) => marker.setMap(null));
   state.markers.clear();
-  const bounds = state.map.getBounds();
-  const inFrame = bounds
-    ? state.places.filter((place) => place.lat != null && place.lng != null && bounds.contains({ lat: place.lat, lng: place.lng }))
-    : state.places.filter((place) => place.lat != null && place.lng != null);
-  const displayed = chooseVisibleMarkers(inFrame, bounds, state.selectedId);
-  const countEl = $('#map-count');
-  if (countEl) countEl.textContent = inFrame.length ? `${displayed.length} affiché${displayed.length > 1 ? 's' : ''} sur ${inFrame.length} dans la zone` : '';
-  displayed.forEach((place) => {
+  $('#map-count').textContent = inFrame.length ? `${shown.length} affiché${shown.length > 1 ? 's' : ''} sur ${inFrame.length} dans la zone` : '';
+  shown.forEach((place) => {
     const marker = new google.maps.Marker({
       position: { lat: place.lat, lng: place.lng },
       map: state.map,
@@ -233,7 +264,7 @@ function selectPlace(placeId, pan = false) {
   const place = state.places.find((item) => item.placeId === placeId);
   if (!place) return;
   state.selectedId = placeId;
-  renderMarkers();
+  renderMapPlaces();
   if (pan && state.map && place.lat != null && place.lng != null) {
     state.map.panTo({ lat: place.lat, lng: place.lng });
     state.map.setZoom(Math.max(state.map.getZoom(), 16));
@@ -244,8 +275,7 @@ function selectPlace(placeId, pan = false) {
 /** Replaces `updated` in state.places, and re-renders whatever's currently showing it. */
 function applyPlaceUpdate(updated) {
   state.places = state.places.map((place) => (place.id === updated.id ? updated : place));
-  renderPlaceList();
-  renderMarkers();
+  renderPlaces();
   if (state.selectedId === updated.placeId) renderDetail(updated);
 }
 
@@ -296,7 +326,7 @@ function renderDetail(place) {
   card.querySelector('.close-detail').onclick = () => {
     state.selectedId = null;
     card.classList.add('hidden');
-    renderMarkers();
+    renderMapPlaces();
   };
   card.querySelectorAll('[data-status]').forEach((button) => {
     button.onclick = () => onStatusChange(place, button.dataset.status);
@@ -356,8 +386,7 @@ async function addResult(candidate, button) {
       types: candidate.types || [],
     });
     if (!state.places.some((tracked) => tracked.placeId === place.placeId)) state.places = [place, ...state.places];
-    renderPlaceList();
-    renderMarkers();
+    renderPlaces();
     selectPlace(place.placeId, true);
     button.textContent = '✓';
     button.title = 'Déjà suivi';
@@ -544,8 +573,7 @@ async function onScanZone() {
         onPlaceAdded: (place) => {
           addedSoFar += 1;
           state.places = [place, ...state.places];
-          renderPlaceList();
-          renderMarkers();
+          renderPlaces();
         },
       });
 
@@ -605,10 +633,10 @@ async function initMap(googleMapsApiKey) {
     mapTypeControl: false,
     fullscreenControl: false,
   });
-  // The markers drawn depend on the frame, so redraw once the map settles after any pan or
-  // zoom — including the pan to an établissement picked from the list or the Tableau de bord.
-  state.map.addListener('idle', renderMarkers);
-  renderMarkers();
+  // The markers and the sidebar list depend on the frame, so redraw once the map settles after
+  // any pan or zoom — including the pan to an établissement picked from the list or the Tableau de bord.
+  state.map.addListener('idle', renderMapPlaces);
+  renderMapPlaces();
 }
 
 async function start() {
@@ -641,7 +669,7 @@ async function start() {
     console.error(error);
     return [];
   });
-  renderPlaceList();
+  renderPlaces();
 
   await initMap(config.googleMapsApiKey);
 }
