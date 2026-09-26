@@ -298,6 +298,8 @@ function renderDashboard() {
       // Ticking a row selects it; only a click elsewhere on the row opens it on the map.
       if (event.target.closest('.select-cell')) return;
       showView('map');
+      // At phone width the map sits at the top of the page: bring it on screen, wherever the map view was scrolled.
+      window.scrollTo(0, 0);
       selectPlace(tableRow.dataset.id, true);
     });
   });
