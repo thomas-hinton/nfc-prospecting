@@ -139,10 +139,10 @@ function showView(view) {
   renderDashboard();
 }
 
-/** Fills `select` with an "all" entry (value "") then `options`, and selects `value` (null for "all"). */
+/** Fills `select` with an "all" entry (value "") then `options` (greyed out when `disabled`), and selects `value` (null for "all"). */
 function fillFilterSelect(select, allLabel, options, value) {
   select.innerHTML = [{ value: '', label: allLabel }, ...options]
-    .map((option) => `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}</option>`)
+    .map((option) => `<option value="${escapeHtml(option.value)}"${option.disabled ? ' disabled' : ''}>${escapeHtml(option.label)}</option>`)
     .join('');
   select.value = value ?? '';
 }
@@ -156,7 +156,7 @@ function renderDashboardControls(menus) {
   fillFilterSelect(
     $('#dashboard-status'),
     `Tous les statuts (${total})`,
-    menus.statuses.map((option) => ({ value: option.value, label: `${option.label} (${option.count})` })),
+    menus.statuses.map((option) => ({ ...option, label: `${option.label} (${option.count})` })),
     status
   );
   const { key, direction } = state.dashboard.sort;
@@ -182,11 +182,10 @@ function renderDashboard() {
   const tracked = state.places.length;
   const plural = (count) => (count > 1 ? 's' : '');
   const range = `${shown.first}-${shown.last} sur ${shown.total} établissement${plural(shown.total)}`;
+  // filterMenus never leaves the filters emptying the list, so it is only empty with nothing tracked.
   $('#dashboard-summary').textContent = !tracked
     ? 'Aucun établissement suivi pour le moment.'
-    : !shown.total
-      ? `Aucun établissement ne correspond à ces filtres (sur ${tracked} suivi${plural(tracked)}).`
-      : shown.total === tracked
+    : shown.total === tracked
       ? `${range} suivi${plural(tracked)}`
       : `${range} (sur ${tracked} suivi${plural(tracked)})`;
 
@@ -198,7 +197,7 @@ function renderDashboard() {
             `<tr data-id="${escapeHtml(row.placeId)}"><td><button type="button">${escapeHtml(row.name)}</button><small>${escapeHtml(row.address)}</small></td><td>${escapeHtml(row.city) || '—'}</td><td>${escapeHtml(row.type)}</td><td><span class="status-dot ${escapeHtml(row.status)}"></span>${escapeHtml(row.statusLabel)}</td><td class="amount">${escapeHtml(row.saleAmount)}</td></tr>`
         )
         .join('')
-    : `<tr><td class="dashboard-empty" colspan="5">${tracked ? 'Aucun établissement ne correspond à ces filtres.' : 'Tes établissements suivis apparaîtront ici.'}</td></tr>`;
+    : '<tr><td class="dashboard-empty" colspan="5">Tes établissements suivis apparaîtront ici.</td></tr>';
   body.querySelectorAll('tr[data-id]').forEach((tableRow) => {
     tableRow.addEventListener('click', () => {
       showView('map');

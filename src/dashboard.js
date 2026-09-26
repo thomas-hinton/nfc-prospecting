@@ -78,50 +78,60 @@ function cityOptions(places) {
  *
  * The commune and type menus narrow each other: each offers only the values that still yield
  * an établissement under the other one and the chosen statut, so a combination returning
- * nothing can't be picked. A commune or type chosen earlier that has fallen out of its menu —
- * the statut or the data changed under it — is reset, and the menus are drawn under the filters
- * as they stand after that reset. When each still yields établissements on its own but not
- * together, the commune is kept and the type reset: the commune is what a round is planned in.
+ * nothing can't be picked.
  *
  * The statut menu doesn't narrow: every statut stays on offer, in pipeline order, with how many
  * établissements it holds under the commune and type filters (not under the statut chosen), so
- * an empty stage shows at zero and the commune's whole pipeline reads at a glance.
+ * the commune's whole pipeline reads at a glance. A stage at zero still shows, but `disabled`:
+ * picking it would empty the list.
+ *
+ * The list is never left empty by a value chosen earlier that the data has since moved out
+ * from under (a statut changed, a commune corrected): whatever no longer fits is reset, the
+ * commune last of all — it is what a round is planned in. A commune nothing is in any more
+ * resets; a type the commune no longer has resets; a statut with nothing left under the
+ * commune and type resets. The menus are drawn under the filters as they stand after that.
  */
 export function filterMenus(places, { city = null, type = null, status = null } = {}) {
   const under = (filters) => places.filter((place) => matchesFilters(place, filters));
   const yieldsAny = (filters) => places.some((place) => matchesFilters(place, filters));
 
-  if (!yieldsAny({ city, status })) city = null;
-  if (!yieldsAny({ type, status })) type = null;
-  if (!yieldsAny({ city, type, status })) type = null;
+  if (!yieldsAny({ city })) city = null;
+  if (!yieldsAny({ city, type })) type = null;
+  if (!yieldsAny({ city, type, status })) status = null;
 
   const counted = under({ city, type });
   return {
     filters: { city, type, status },
     cities: cityOptions(under({ type, status })),
     types: menuOptions(under({ city, status }), placeType, placeTypeLabel),
-    statuses: Object.entries(STATUS_LABELS).map(([value, label]) => ({
-      value,
-      label,
-      count: counted.filter((place) => place.status === value).length,
-    })),
+    statuses: Object.entries(STATUS_LABELS).map(([value, label]) => {
+      const count = counted.filter((place) => place.status === value).length;
+      return { value, label, count, disabled: !count };
+    }),
   };
 }
 
 const byText = (textOf) => (a, b) => collator.compare(textOf(a), textOf(b));
+const PIPELINE_ORDER = Object.keys(STATUS_LABELS);
+/** A statut's place in the pipeline; one this doesn't know sorts after every known one. */
+const pipelineRank = (place) => {
+  const rank = PIPELINE_ORDER.indexOf(place.status);
+  return rank < 0 ? PIPELINE_ORDER.length : rank;
+};
 const byDate = (dateOf) => (a, b) => (Date.parse(dateOf(a)) || 0) - (Date.parse(dateOf(b)) || 0);
 
 /**
- * The Tableau de bord's sorts, each an ascending comparator over two établissements. Text is
- * French-collated — accents and case ignored, "Atelier 9" before "Atelier 10" — and a statut
- * or type is compared as displayed. An établissement with no commune sorts after every commune
+ * The Tableau de bord's sorts, each an ascending comparator over two établissements. Name,
+ * commune and type are French-collated — accents and case ignored, "Atelier 9" before
+ * "Atelier 10", a type as displayed; a statut follows the pipeline (à visiter, programmé pour
+ * visite, vendu, refusé, non conforme); dates are chronological. An établissement with no commune sorts after every commune
  * (ascending; `sortPlaces` reverses the whole order for descending, so it then comes first).
  */
 export const SORT_COMPARATORS = {
   name: byText((place) => place.name ?? ''),
   city: (a, b) => (!a.city - !b.city) || collator.compare(a.city ?? '', b.city ?? ''),
   type: byText(placeTypeLabel),
-  status: byText((place) => STATUS_LABELS[place.status] ?? place.status),
+  status: (a, b) => pipelineRank(a) - pipelineRank(b),
   createdAt: byDate((place) => place.createdAt),
   statusChangedAt: byDate((place) => place.statusChangedAt),
 };

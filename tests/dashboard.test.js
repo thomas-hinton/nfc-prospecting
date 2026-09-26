@@ -156,35 +156,49 @@ describe('filterMenus', () => {
     expect(filterMenus(tracked, { city: 'Bandol', type: 'bakery', status: null }).filters).toEqual({ city: 'Bandol', type: 'bakery', status: null });
   });
 
-  it('resets a commune that no longer yields any établissement once the statut changes', () => {
-    expect(filterMenus(tracked, { city: 'Évenos', status: 'sold' }).filters).toEqual({ city: null, type: null, status: 'sold' });
-  });
-
-  it('resets a type that no longer yields any établissement in the chosen commune', () => {
+  it('resets a type that no longer yields any établissement in the chosen commune, keeping the commune', () => {
     expect(filterMenus(tracked, { city: 'Évenos', type: 'bakery' }).filters).toEqual({ city: 'Évenos', type: null, status: null });
   });
 
-  it('narrows the menus under the filters as they stand after a reset', () => {
-    const menus = filterMenus(tracked, { city: 'Évenos', type: 'restaurant', status: 'sold' });
-    expect(menus.filters).toEqual({ city: null, type: 'restaurant', status: 'sold' });
-    expect(values(menus.cities)).toEqual(['Bandol']);
-    expect(values(menus.types)).toEqual(['bakery', 'restaurant']);
+  it('resets a commune no établissement is in any more', () => {
+    expect(filterMenus(tracked, { city: 'Toulon', type: 'bakery' }).filters).toEqual({ city: null, type: 'bakery', status: null });
   });
 
-  it('keeps every statut on offer, in pipeline order, each counted under the commune and type filters — an empty stage at zero', () => {
+  it('keeps every statut on offer, in pipeline order, each counted under the commune and type filters — an empty stage at zero, greyed out', () => {
     expect(filterMenus(tracked, { city: 'Bandol' }).statuses).toEqual([
-      { value: 'to_visit', label: 'À visiter', count: 0 },
-      { value: 'scheduled', label: 'Programmé pour visite', count: 0 },
-      { value: 'sold', label: 'Vendu', count: 1 },
-      { value: 'refused', label: 'Refusé', count: 1 },
-      { value: 'non_compliant', label: 'Non conforme', count: 0 },
+      { value: 'to_visit', label: 'À visiter', count: 0, disabled: true },
+      { value: 'scheduled', label: 'Programmé pour visite', count: 0, disabled: true },
+      { value: 'sold', label: 'Vendu', count: 1, disabled: false },
+      { value: 'refused', label: 'Refusé', count: 1, disabled: false },
+      { value: 'non_compliant', label: 'Non conforme', count: 0, disabled: true },
     ]);
   });
 
-  it('keeps a statut chosen even when it has no établissement', () => {
-    const menus = filterMenus(tracked, { status: 'scheduled' });
-    expect(menus.filters.status).toBe('scheduled');
-    expect(menus.statuses.find((option) => option.value === 'scheduled').count).toBe(0);
+  it('never leaves an empty list: a statut with nothing left under the commune and type resets, the commune stays', () => {
+    const menus = filterMenus(tracked, { city: 'Évenos', status: 'sold' });
+    expect(menus.filters).toEqual({ city: 'Évenos', type: null, status: null });
+    expect(tracked.filter((item) => matchesFilters(item, menus.filters)).map((item) => item.placeId)).toEqual(['d']);
+  });
+
+  it('keeps the commune over both the type and the statut when none of them fit together any more', () => {
+    const menus = filterMenus(tracked, { city: 'Évenos', type: 'restaurant', status: 'sold' });
+    expect(menus.filters).toEqual({ city: 'Évenos', type: null, status: null });
+    expect(values(menus.cities)).toEqual(['Bandol', 'Évenos', 'Saint-Cyr-sur-Mer', NO_CITY]);
+    expect(values(menus.types)).toEqual(['hair_care']);
+  });
+
+  it('leaves no combination of commune, type and statut that lists nothing, however stale the chosen values', () => {
+    const cities = [null, 'Bandol', 'Évenos', 'Saint-Cyr-sur-Mer', 'Toulon', NO_CITY];
+    const types = [null, 'bakery', 'restaurant', 'hair_care', 'florist'];
+    const statuses = [null, 'to_visit', 'scheduled', 'sold', 'refused', 'non_compliant'];
+    for (const city of cities) {
+      for (const type of types) {
+        for (const status of statuses) {
+          const { filters } = filterMenus(tracked, { city, type, status });
+          expect(tracked.some((item) => matchesFilters(item, filters)), JSON.stringify({ city, type, status })).toBe(true);
+        }
+      }
+    }
   });
 
   it('counts each statut whatever statut is chosen', () => {
@@ -213,8 +227,8 @@ describe('sortPlaces', () => {
     expect(order({ key: 'type', direction: 'asc' })).toEqual(['a', 'd', 'c', 'b']);
   });
 
-  it('sorts by statut, French-collated', () => {
-    expect(order({ key: 'status', direction: 'asc' })).toEqual(['a', 'd', 'c', 'b']);
+  it('sorts by statut in pipeline order: à visiter, programmé, vendu, refusé, non conforme', () => {
+    expect(order({ key: 'status', direction: 'asc' })).toEqual(['a', 'b', 'c', 'd']);
   });
 
   it('sorts by date added and by date of last statut change', () => {
@@ -225,7 +239,7 @@ describe('sortPlaces', () => {
   it('offers every sort descending too', () => {
     expect(order({ key: 'name', direction: 'desc' })).toEqual(['d', 'a', 'b', 'c']);
     expect(order({ key: 'type', direction: 'desc' })).toEqual(['b', 'c', 'd', 'a']);
-    expect(order({ key: 'status', direction: 'desc' })).toEqual(['b', 'c', 'd', 'a']);
+    expect(order({ key: 'status', direction: 'desc' })).toEqual(['d', 'c', 'b', 'a']);
     expect(order({ key: 'createdAt', direction: 'desc' })).toEqual(['c', 'd', 'a', 'b']);
     expect(order({ key: 'statusChangedAt', direction: 'desc' })).toEqual(['d', 'a', 'c', 'b']);
   });
