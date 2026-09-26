@@ -5,10 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#101828" />
     <title>NFC Prospection · Prospection</title>
-    <link rel="stylesheet" href="styles.css?v=48" />
+    <link rel="stylesheet" href="styles.css?v=49" />
   </head>
   <body data-requires-auth data-page="prospection">
-    <div id="app-shell">
+    <div id="app-shell" data-view="map">
       <header class="topbar">
         <a class="brand" href="index.html" title="Retour à l’accueil"><span class="brand-mark">N</span><span>NFC Prospection</span></a>
         <nav class="view-switch" aria-label="Vue">
@@ -67,59 +67,59 @@
           </div>
         </div>
         <div id="detail-card" class="detail-card hidden" aria-live="polite"></div>
-
-        <section id="dashboard-panel" class="dashboard-panel hidden" aria-label="Tableau de bord">
-          <p class="eyebrow">TABLEAU DE BORD</p>
-          <section id="dashboard-metrics" class="dashboard-metric-grid" aria-label="Chiffres des établissements affichés"></section>
-          <div class="dashboard-header">
-            <h2>Tous mes établissements</h2>
-            <p class="dashboard-summary-line">
-              <span id="dashboard-summary"></span>
-              <button id="dashboard-filters-reset" class="dashboard-filters-reset hidden" type="button">Réinitialiser les filtres</button>
-              <button id="dashboard-print" class="dashboard-print" type="button" title="Imprimer la sélection, ou à défaut tous les établissements filtrés — « Enregistrer au format PDF » dans la fenêtre d’impression pour un PDF">Imprimer / PDF</button>
-            </p>
-          </div>
-          <div class="dashboard-list-section">
-            <div class="dashboard-controls">
-              <span class="dashboard-controls-select-cell" aria-hidden="true"></span>
-              <label class="dashboard-sort-field">Trier par
-                <select id="dashboard-sort">
-                  <option value="name">Nom</option>
-                  <option value="city">Commune</option>
-                  <option value="type">Type</option>
-                  <option value="status">Statut</option>
-                  <option value="createdAt" selected>Date d’ajout</option>
-                  <option value="statusChangedAt">Dernier changement de statut</option>
-                </select>
-              </label>
-              <label>Commune <select id="dashboard-city"></select></label>
-              <label>Type <select id="dashboard-type"></select></label>
-              <label>Statut <select id="dashboard-status"></select></label>
-              <button id="dashboard-sort-direction" class="dashboard-sort-direction" type="button"></button>
-            </div>
-            <div id="dashboard-bulk" class="dashboard-bulk hidden" role="group" aria-label="Changement de statut groupé">
-              <p id="dashboard-selection-count" class="dashboard-selection-count" aria-live="polite"></p>
-              <button id="dashboard-selection-clear" class="dashboard-bulk-clear" type="button">Tout désélectionner</button>
-              <label class="dashboard-bulk-status">Passer au statut <select id="dashboard-bulk-status"></select></label>
-              <button id="dashboard-bulk-apply" class="dashboard-bulk-apply" type="button">Appliquer</button>
-            </div>
-            <p id="dashboard-bulk-message" class="form-message dashboard-bulk-message" aria-live="polite"></p>
-            <div class="dashboard-table-scroll">
-              <table class="dashboard-grid">
-                <colgroup><col class="select-col"><col class="name-col"><col class="city-col"><col class="type-col"><col class="status-col"><col class="amount-col"></colgroup>
-                <thead>
-                  <tr><th scope="col" class="select-cell"><input id="dashboard-select-all" type="checkbox" aria-label="Sélectionner tous les établissements filtrés, toutes pages comprises" title="Sélectionner tous les établissements filtrés, toutes pages comprises"></th><th scope="col">Établissement</th><th scope="col">Commune</th><th scope="col">Type</th><th scope="col">Statut</th><th scope="col" class="amount">Vente</th></tr>
-                </thead>
-                <tbody id="dashboard-rows"></tbody>
-              </table>
-            </div>
-            <div class="dashboard-pagination">
-              <label>Afficher <select id="dashboard-size"><option value="10">10</option><option value="25" selected>25</option><option value="50">50</option><option value="100">100</option></select> par page</label>
-              <nav id="dashboard-page-strip" class="page-strip hidden" aria-label="Pagination du tableau de bord"></nav>
-            </div>
-          </div>
-        </section>
       </main>
+
+      <section id="dashboard-panel" class="dashboard-panel hidden" aria-label="Tableau de bord">
+        <p class="eyebrow">TABLEAU DE BORD</p>
+        <section id="dashboard-metrics" class="dashboard-metric-grid" aria-label="Chiffres des établissements affichés"></section>
+        <div class="dashboard-header">
+          <h2>Tous mes établissements</h2>
+          <p class="dashboard-summary-line">
+            <span id="dashboard-summary"></span>
+            <button id="dashboard-filters-reset" class="dashboard-filters-reset hidden" type="button">Réinitialiser les filtres</button>
+            <button id="dashboard-print" class="dashboard-print" type="button" title="Imprimer la sélection, ou à défaut tous les établissements filtrés — « Enregistrer au format PDF » dans la fenêtre d’impression pour un PDF">Imprimer / PDF</button>
+          </p>
+        </div>
+        <div class="dashboard-list-section">
+          <div class="dashboard-controls">
+            <span class="dashboard-controls-select-cell" aria-hidden="true"></span>
+            <label class="dashboard-sort-field">Trier par
+              <select id="dashboard-sort">
+                <option value="name">Nom</option>
+                <option value="city">Commune</option>
+                <option value="type">Type</option>
+                <option value="status">Statut</option>
+                <option value="createdAt" selected>Date d’ajout</option>
+                <option value="statusChangedAt">Dernier changement de statut</option>
+              </select>
+            </label>
+            <label>Commune <select id="dashboard-city"></select></label>
+            <label>Type <select id="dashboard-type"></select></label>
+            <label>Statut <select id="dashboard-status"></select></label>
+            <button id="dashboard-sort-direction" class="dashboard-sort-direction" type="button"></button>
+          </div>
+          <div id="dashboard-bulk" class="dashboard-bulk hidden" role="group" aria-label="Changement de statut groupé">
+            <p id="dashboard-selection-count" class="dashboard-selection-count" aria-live="polite"></p>
+            <button id="dashboard-selection-clear" class="dashboard-bulk-clear" type="button">Tout désélectionner</button>
+            <label class="dashboard-bulk-status">Passer au statut <select id="dashboard-bulk-status"></select></label>
+            <button id="dashboard-bulk-apply" class="dashboard-bulk-apply" type="button">Appliquer</button>
+          </div>
+          <p id="dashboard-bulk-message" class="form-message dashboard-bulk-message" aria-live="polite"></p>
+          <div class="dashboard-table-scroll">
+            <table class="dashboard-grid">
+              <colgroup><col class="select-col"><col class="name-col"><col class="city-col"><col class="type-col"><col class="status-col"><col class="amount-col"></colgroup>
+              <thead>
+                <tr><th scope="col" class="select-cell"><input id="dashboard-select-all" type="checkbox" aria-label="Sélectionner tous les établissements filtrés, toutes pages comprises" title="Sélectionner tous les établissements filtrés, toutes pages comprises"></th><th scope="col">Établissement</th><th scope="col">Commune</th><th scope="col">Type</th><th scope="col">Statut</th><th scope="col" class="amount">Vente</th></tr>
+              </thead>
+              <tbody id="dashboard-rows"></tbody>
+            </table>
+          </div>
+          <div class="dashboard-pagination">
+            <label>Afficher <select id="dashboard-size"><option value="10">10</option><option value="25" selected>25</option><option value="50">50</option><option value="100">100</option></select> par page</label>
+            <nav id="dashboard-page-strip" class="page-strip hidden" aria-label="Pagination du tableau de bord"></nav>
+          </div>
+        </div>
+      </section>
     </div>
 
     <section id="dashboard-print-sheet" class="dashboard-print-sheet">

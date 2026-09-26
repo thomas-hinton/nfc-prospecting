@@ -25,10 +25,11 @@ import { renderPageStrip } from './page-strip.js';
  * the map, and copy/open its Google Maps link for NFC encoding. Every Google Places / Maps
  * JavaScript call goes through the store's `checkAndConsumeQuota()` first.
  *
- * The map shares its area with a second view, the Tableau de bord: a paginated table of
- * every tracked établissement, filtered and sorted client-side. Both views draw the same
- * `state.places`, loaded once. The sidebar list belongs to the map view: it lists exactly the
- * établissements whose markers are drawn, and is hidden while the Tableau de bord is on screen.
+ * The map view has a second view beside it, the Tableau de bord: a paginated table of every
+ * tracked établissement, filtered and sorted client-side, taking the whole page below the top
+ * bar. Both views draw the same `state.places`, loaded once. The sidebar belongs to the map
+ * view — its forms act on the map, and its list shows exactly the établissements whose markers
+ * are drawn — so it is hidden, with the map, while the Tableau de bord is on screen.
  */
 
 const STATUS_COLORS = { to_visit: '#55a7e8', scheduled: '#e5b72b', sold: '#22a06b', refused: '#e5484d', non_compliant: '#a1a9b7' };
@@ -72,6 +73,7 @@ const state = {
   selectedId: null,
   mapUnavailable: false,
   view: 'map',
+  mapViewScrollY: 0,
   /** The configured sale price the potentiel is estimated at; null until read (or if it can't be). */
   salePrice: null,
   dashboard: {
@@ -154,14 +156,22 @@ function renderSidebarList(shown) {
   });
 }
 
-/** Shows the map or the Tableau de bord in the map area; the sidebar's forms stay either way, its list only with the map. */
+/**
+ * Shows the map view (sidebar and map) or the Tableau de bord in their place. It is a display
+ * change only: the stylesheet hides the sidebar and the map without removing them or changing
+ * the map's size, so the map is never redrawn and both come back exactly as they were left.
+ */
 function showView(view) {
+  if (view === state.view) return;
+  // At phone width the page itself scrolls: open the Tableau de bord at its top, and give the map view back its scroll.
+  if (view === 'dashboard') state.mapViewScrollY = window.scrollY;
   state.view = view;
   document.querySelectorAll('.view-switch [data-view]').forEach((button) => {
     button.setAttribute('aria-pressed', String(button.dataset.view === view));
   });
+  $('#app-shell').dataset.view = view;
   $('#dashboard-panel').classList.toggle('hidden', view !== 'dashboard');
-  $('#map-list-section').classList.toggle('hidden', view !== 'map');
+  window.scrollTo(0, view === 'dashboard' ? 0 : state.mapViewScrollY);
   renderDashboard();
   // The sale price may have been changed in the settings since it was last read: re-read it, so the potentiel follows.
   if (view === 'dashboard') loadSalePrice().then(renderDashboard);
@@ -300,7 +310,9 @@ function renderDashboard() {
     onSelect: (page) => {
       state.dashboard.page = page;
       renderDashboard();
+      // The Tableau de bord scrolls inside its panel at desktop width, with the page at phone width.
       $('#dashboard-panel').scrollTop = 0;
+      window.scrollTo(0, 0);
     },
   });
 }
