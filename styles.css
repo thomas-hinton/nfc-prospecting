@@ -61,4 +61,5 @@ body[data-requires-auth] { visibility:hidden; }
 .dashboard-grid td small { display:block; margin-top:3px; color:var(--muted); }
 .dashboard-grid .status-dot { display:inline-block; margin-right:6px; }
 .dashboard-grid .dashboard-empty { padding:24px; color:var(--muted); text-align:center; cursor:default; }
+.place-item.selected { border-color:#ff6a3d; background:#fff4f0; box-shadow:0 0 0 1px #ff6a3d; }.place-item.selected .place-item-main:hover { background:#ffede6; }
 @media (max-width:760px) { .view-switch button { padding:6px 8px; } .dashboard-panel { padding:18px; } }

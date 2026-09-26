@@ -132,6 +132,43 @@ describe('placesOnMap', () => {
     expect(shown.some((p) => p.placeId === places[150].placeId)).toBe(true);
   });
 
+  it('keeps the open établissement shown after its statut changes in a zone where the cap is reached', () => {
+    const places = denseZone(300);
+    const openId = places[150].placeId;
+    places[150] = { ...places[150], status: 'sold' };
+
+    const { shown } = placesOnMap(places, fakeBounds(), openId);
+
+    expect(shown).toHaveLength(250);
+    expect(shown.some((p) => p.placeId === openId)).toBe(true);
+  });
+
+  it('keeps the statut priority of the cap while the open établissement holds its slot', () => {
+    const places = denseZone(300);
+    places[150] = { ...places[150], status: 'sold' };
+
+    const { shown } = placesOnMap(places, fakeBounds(), places[150].placeId);
+
+    expect(shown.filter((p) => p.status === 'to_visit')).toHaveLength(249);
+  });
+
+  it('applies the usual rule again once no établissement is open', () => {
+    const places = denseZone(300);
+    places[150] = { ...places[150], status: 'sold' };
+
+    const { shown } = placesOnMap(places, fakeBounds(), null);
+
+    expect(shown.every((p) => p.status === 'to_visit')).toBe(true);
+  });
+
+  it('lists the open établissement first, whether or not the cap is reached', () => {
+    const few = [place({ placeId: 'a' }), place({ placeId: 'b' }), place({ placeId: 'c' })];
+    expect(placesOnMap(few, fakeBounds(), 'c').shown.map((p) => p.placeId)).toEqual(['c', 'a', 'b']);
+
+    const many = denseZone(300);
+    expect(placesOnMap(many, fakeBounds(), many[150].placeId).shown[0].placeId).toBe(many[150].placeId);
+  });
+
   it('shows nothing before the map has a frame, as no marker is drawn yet', () => {
     expect(placesOnMap([place()], null)).toEqual({ inFrame: [], shown: [] });
   });

@@ -110,6 +110,10 @@ function renderSidebarList(shown) {
   shown.forEach((place) => {
     const item = template.content.firstElementChild.cloneNode(true);
     item.dataset.id = place.placeId;
+    if (place.placeId === state.selectedId) {
+      item.classList.add('selected');
+      item.querySelector('.place-item-main').setAttribute('aria-current', 'true');
+    }
     const dot = item.querySelector('.status-dot');
     if (place.status !== 'to_visit') dot.classList.add(place.status);
     item.querySelector('strong').textContent = place.name;
@@ -204,20 +208,21 @@ function spatialSample(places, limit, bounds) {
   return selected;
 }
 
-/** Caps the markers drawn on the map at MAX_VISIBLE_MARKERS, sampling each statut bucket separately so a scan of a dense zone doesn't drown out other statuts, and always keeping `selectedId`'s marker visible. */
+/**
+ * Caps the markers drawn on the map at MAX_VISIBLE_MARKERS, filling the statut buckets in
+ * STATUS_ORDER and sampling each one spatially so a dense zone doesn't crowd out sparser areas.
+ * `selectedId`'s établissement — the one whose détail card is open — holds a slot of its own,
+ * taken before any bucket, so it stays drawn whatever its statut.
+ */
 export function chooseVisibleMarkers(places, bounds, selectedId = null) {
   if (places.length <= MAX_VISIBLE_MARKERS || !bounds) return places;
-  let remaining = MAX_VISIBLE_MARKERS;
-  let result = [];
+  const selected = places.find((place) => place.placeId === selectedId);
+  let remaining = MAX_VISIBLE_MARKERS - (selected ? 1 : 0);
+  let result = selected ? [selected] : [];
   for (const status of STATUS_ORDER) {
     if (!remaining) break;
-    const group = places.filter((place) => place.status === status);
-    const selected = group.find((place) => place.placeId === selectedId);
+    const group = places.filter((place) => place.status === status && place !== selected);
     const sample = spatialSample(group, remaining, bounds);
-    if (selected && !sample.some((place) => place.placeId === selected.placeId)) {
-      sample.pop();
-      sample.unshift(selected);
-    }
     result = result.concat(sample);
     remaining -= sample.length;
   }
@@ -236,12 +241,15 @@ function inBounds(place, bounds) {
 /**
  * The établissements the map view draws for the frame `bounds`: `inFrame` is every one inside
  * it, `shown` the capped subset that gets a marker — and, the same set, a row in the sidebar
- * list. No frame yet (the map isn't loaded) means nothing is drawn.
+ * list, the open établissement (`selectedId`) first. No frame yet (the map isn't loaded) means
+ * nothing is drawn.
  */
 export function placesOnMap(places, bounds, selectedId = null) {
   if (!bounds) return { inFrame: [], shown: [] };
   const inFrame = places.filter((place) => inBounds(place, bounds));
-  return { inFrame, shown: chooseVisibleMarkers(inFrame, bounds, selectedId) };
+  const capped = chooseVisibleMarkers(inFrame, bounds, selectedId);
+  const selected = capped.find((place) => place.placeId === selectedId);
+  return { inFrame, shown: selected ? [selected, ...capped.filter((place) => place !== selected)] : capped };
 }
 
 /** Redraws the markers and the sidebar list for the current frame — a local redraw, no Supabase or Google request. */
