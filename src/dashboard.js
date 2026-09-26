@@ -150,6 +150,8 @@ export function sortPlaces(places, { key, direction = 'asc' }) {
 
 /** `amount` in euros rounded to the cent, so summing prices doesn't drift (0.1 + 0.2). */
 const toCents = (amount) => Math.round(Number(amount || 0) * 100);
+/** What the vendu établissements among `sold` were sold for, summed to the cent. */
+const saleTotal = (sold) => sold.reduce((sum, place) => sum + toCents(place.saleAmount), 0) / 100;
 
 /**
  * The Tableau de bord's metrics over the établissements `places` leaves under `filters` — the
@@ -169,7 +171,7 @@ export function dashboardMetrics(places, { filters = {}, salePrice }) {
   const priced = (count) => (salePrice == null ? null : (count * toCents(salePrice)) / 100);
   return {
     sold: sold.length,
-    revenue: sold.reduce((sum, place) => sum + toCents(place.saleAmount), 0) / 100,
+    revenue: saleTotal(sold),
     scheduled,
     toVisit,
     refused: withStatus('refused').length,
@@ -177,12 +179,17 @@ export function dashboardMetrics(places, { filters = {}, salePrice }) {
   };
 }
 
+/** The placeIds of the établissements `places` leaves under `filters` — what "tick all" ticks, pages included. */
+export function filteredPlaceIds(places, filters) {
+  return new Set(places.filter((place) => matchesFilters(place, filters)).map((place) => place.placeId));
+}
+
 /**
  * `selection` (a Set of placeIds) narrowed to the établissements `places` leaves under
  * `filters`, so a bulk change can never reach a row the prospector can no longer see.
  */
 export function pruneSelection(selection, places, filters) {
-  const listed = new Set(places.filter((place) => matchesFilters(place, filters)).map((place) => place.placeId));
+  const listed = filteredPlaceIds(places, filters);
   return new Set([...selection].filter((placeId) => listed.has(placeId)));
 }
 
@@ -194,14 +201,22 @@ export function pruneSelection(selection, places, filters) {
 export const BULK_STATUSES = ['scheduled', 'refused', 'non_compliant', 'to_visit'];
 
 /**
+ * The établissements among `selected` a bulk change to `status` moves: those not already at it.
+ * Throws on a statut outside BULK_STATUSES, so vendu can never be bulk-applied.
+ */
+export function bulkMoves(selected, status) {
+  if (!BULK_STATUSES.includes(status)) throw new Error(`Statut indisponible en changement groupé : ${status}`);
+  return selected.filter((place) => place.status !== status);
+}
+
+/**
  * What moving the `selected` établissements to `status` (one of BULK_STATUSES) will do, for
  * the confirmation that precedes it: how many will move (`count`; those already at `status`
  * are `unchanged`), and how many of those are vendu (`soldCount`) with the total sale amount
  * clearing them will destroy (`amountCleared`).
  */
 export function bulkImpact(selected, status) {
-  if (!BULK_STATUSES.includes(status)) throw new Error(`Statut indisponible en changement groupé : ${status}`);
-  const moving = selected.filter((place) => place.status !== status);
+  const moving = bulkMoves(selected, status);
   const sold = moving.filter((place) => place.status === 'sold');
   return {
     status,
@@ -209,6 +224,6 @@ export function bulkImpact(selected, status) {
     count: moving.length,
     unchanged: selected.length - moving.length,
     soldCount: sold.length,
-    amountCleared: sold.reduce((sum, place) => sum + toCents(place.saleAmount), 0) / 100,
+    amountCleared: saleTotal(sold),
   };
 }

@@ -2,7 +2,18 @@ import { bootstrapStore } from './bootstrap.js';
 import { readConfig } from './supabase-client.js';
 import { STATUS_LABELS, euros } from './store.js';
 import { placeTypeLabel } from './place-fields.js';
-import { BULK_STATUSES, bulkImpact, dashboardMetrics, dashboardPage, filterMenus, matchesFilters, pruneSelection, sortPlaces } from './dashboard.js';
+import {
+  BULK_STATUSES,
+  bulkImpact,
+  bulkMoves,
+  dashboardMetrics,
+  dashboardPage,
+  filterMenus,
+  filteredPlaceIds,
+  matchesFilters,
+  pruneSelection,
+  sortPlaces,
+} from './dashboard.js';
 import { renderPageStrip } from './page-strip.js';
 
 /**
@@ -68,6 +79,8 @@ const state = {
     sort: { key: 'createdAt', direction: 'desc' },
     /** The ticked établissements' placeIds — always within the filtered set, rows on other pages included. */
     selection: new Set(),
+    /** Whether a bulk change is running: the selection and the filters are locked until it ends. */
+    bulkRunning: false,
   },
 };
 
@@ -281,15 +294,20 @@ function renderDashboardSelection(listed) {
   const selectAll = $('#dashboard-select-all');
   selectAll.checked = listed.length > 0 && selection.size === listed.length;
   selectAll.indeterminate = selection.size > 0 && selection.size < listed.length;
-  selectAll.disabled = !listed.length;
 
   const count = selection.size;
   const elsewhere = count - onPage;
   $('#dashboard-selection-count').textContent = !count
     ? 'Aucun établissement sélectionné'
     : `${count} établissement${plural(count)} sélectionné${plural(count)}${elsewhere ? ` (dont ${elsewhere} sur d’autres pages)` : ''}`;
-  $('#dashboard-selection-clear').disabled = !count;
-  $('#dashboard-bulk-apply').disabled = !count;
+  // While a bulk change runs, what it acts on is frozen: no ticking, no clearing, no filtering.
+  const locked = state.dashboard.bulkRunning;
+  document.querySelectorAll('#dashboard-rows .select-cell input').forEach((checkbox) => (checkbox.disabled = locked));
+  selectAll.disabled = locked || !listed.length;
+  ['city', 'type', 'status'].forEach((filter) => ($(`#dashboard-${filter}`).disabled = locked));
+  $('#dashboard-bulk-status').disabled = locked;
+  $('#dashboard-selection-clear').disabled = locked || !count;
+  $('#dashboard-bulk-apply').disabled = locked || !count;
 }
 
 /** The confirmation every bulk change is preceded by, from its `impact` (see `bulkImpact`). */
@@ -315,8 +333,15 @@ async function onBulkStatusChange() {
   if (!window.confirm(bulkConfirmation(impact))) return;
 
   setFormMessage('#dashboard-bulk-message', 'Changement de statut en cours…');
+  state.dashboard.bulkRunning = true;
+  renderDashboard();
   await withBusyButton($('#dashboard-bulk-apply'), 'Modification…', async () => {
-    const report = await runBulkStatusChange({ places: selected, status, store });
+    let report;
+    try {
+      report = await runBulkStatusChange({ places: selected, status, store });
+    } finally {
+      state.dashboard.bulkRunning = false;
+    }
     applyPlaceUpdates(report.updated);
     const moved = `${report.changed} établissement${plural(report.changed)} passé${plural(report.changed)} au statut « ${impact.statusLabel} »`;
     if (report.error) {
@@ -457,8 +482,8 @@ function applyPlaceUpdates(updated) {
   const byId = new Map(updated.map((place) => [place.id, place]));
   state.places = state.places.map((place) => byId.get(place.id) ?? place);
   renderPlaces();
-  const open = state.places.find((place) => place.placeId === state.selectedId);
-  if (open && byId.has(open.id)) renderDetail(open);
+  const inDetail = state.places.find((place) => place.placeId === state.selectedId);
+  if (inDetail && byId.has(inDetail.id)) renderDetail(inDetail);
 }
 
 async function onStatusChange(place, status) {
@@ -733,8 +758,7 @@ export async function runZoneScan({ cells, store, searchCell, onCellStart, onPla
  * changed, for the caller to redraw.
  */
 export async function runBulkStatusChange({ places, status, store }) {
-  if (!BULK_STATUSES.includes(status)) throw new Error(`Statut indisponible en changement groupé : ${status}`);
-  const moving = places.filter((place) => place.status !== status);
+  const moving = bulkMoves(places, status);
   const updated = [];
   for (const place of moving) {
     try {
@@ -878,9 +902,7 @@ async function start() {
   });
   $('#dashboard-select-all').addEventListener('change', (event) => {
     // Ticks the whole filtered set, rows on other pages included — not just this page.
-    state.dashboard.selection = event.target.checked
-      ? new Set(state.places.filter((place) => matchesFilters(place, state.dashboard.filters)).map((place) => place.placeId))
-      : new Set();
+    state.dashboard.selection = event.target.checked ? filteredPlaceIds(state.places, state.dashboard.filters) : new Set();
     renderDashboard();
   });
   $('#dashboard-selection-clear').addEventListener('click', () => {

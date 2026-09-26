@@ -76,7 +76,7 @@ body[data-requires-auth] { visibility:hidden; }
 .metric.scheduled .metric-amount { color:#8d6500; }
 .metric.visit .metric-amount { color:#1766a3; }
 @media (max-width:760px) { .dashboard-metric-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .dashboard-metric-grid .metric { padding:12px; } .dashboard-metric-grid .metric strong { font-size:22px; } .dashboard-metric-grid .metric-amount { font-size:15px; } }
-.dashboard-bulk { display:flex; flex-wrap:wrap; align-items:center; gap:8px 10px; margin-bottom:12px; padding:10px 12px; border:1px solid var(--line); border-radius:10px; background:#fafbfc; font-size:12px; }
+.dashboard-bulk { position:sticky; top:0; z-index:1; display:flex; flex-wrap:wrap; align-items:center; gap:8px 10px; margin-bottom:12px; padding:10px 12px; border:1px solid var(--line); border-radius:10px; background:#fafbfc; font-size:12px; }
 .dashboard-selection-count { margin:0; color:var(--ink); font-weight:800; }
 .dashboard-bulk-clear { padding:0; border:0; background:none; color:var(--brand-deep); font-size:12px; font-weight:700; text-decoration:underline; }
 .dashboard-bulk-clear:disabled { color:var(--grey); text-decoration:none; }
