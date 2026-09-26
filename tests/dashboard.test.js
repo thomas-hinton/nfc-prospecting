@@ -296,8 +296,7 @@ describe('dashboardMetrics', () => {
 
   it('reads the whole tracked list when no filter is chosen', () => {
     expect(dashboardMetrics(tracked, { filters: {}, salePrice: 50 })).toMatchObject({
-      scope: 'Tous les établissements suivis',
-      filtered: false,
+      scope: [],
       count: 9,
       sold: 3,
       revenue: 170.3,
@@ -310,7 +309,6 @@ describe('dashboardMetrics', () => {
 
   it('reads only the filtered set: what is sold there, and what is left to do there', () => {
     expect(dashboardMetrics(tracked, { filters: { city: 'Toulon' }, salePrice: 50 })).toMatchObject({
-      filtered: true,
       count: 3,
       sold: 1,
       revenue: 0.2,
@@ -332,9 +330,10 @@ describe('dashboardMetrics', () => {
 
   it('names the set it covers, so a filtered figure is not mistaken for an overall total', () => {
     const scope = (filters) => dashboardMetrics(tracked, { filters, salePrice: 50 }).scope;
-    expect(scope({ city: 'Toulon' })).toBe('Toulon');
-    expect(scope({ city: NO_CITY, type: 'hair_care', status: 'non_compliant' })).toBe('Sans commune · hair care · Non conforme');
-    expect(scope({ status: 'to_visit' })).toBe('À visiter');
+    expect(scope({})).toEqual([]);
+    expect(scope({ city: 'Toulon' })).toEqual(['Toulon']);
+    expect(scope({ city: NO_CITY, type: 'hair_care', status: 'non_compliant' })).toEqual(['Sans commune', 'hair care', 'Non conforme']);
+    expect(scope({ status: 'to_visit' })).toEqual(['À visiter']);
   });
 
   it('prices the potentiel at the configured sale price, so it moves when that price changes', () => {
@@ -344,7 +343,7 @@ describe('dashboardMetrics', () => {
     expect(potentiel(0)).toBe(0);
   });
 
-  it('counts only what a vendu établissement was actually sold for, never a past sale of a reopened one', () => {
+  it('counts revenue only from vendu établissements, ignoring an amount left on any other statut', () => {
     expect(dashboardMetrics(tracked, { filters: { status: 'refused' }, salePrice: 50 })).toMatchObject({ sold: 0, revenue: 0 });
   });
 
@@ -354,8 +353,7 @@ describe('dashboardMetrics', () => {
 
   it('reads all zeros when nothing is tracked', () => {
     expect(dashboardMetrics([], { filters: {}, salePrice: 50 })).toEqual({
-      scope: 'Tous les établissements suivis',
-      filtered: false,
+      scope: [],
       count: 0,
       sold: 0,
       revenue: 0,

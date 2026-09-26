@@ -160,9 +160,9 @@ async function loadSalePrice() {
 /** Redraws the Tableau de bord's metric cards over the filtered set, named by its `scope` (see `dashboardMetrics`). */
 function renderDashboardMetrics(filters) {
   const metrics = dashboardMetrics(state.places, { filters, salePrice: state.salePrice });
-  $('#dashboard-metrics-scope').textContent = metrics.filtered
-    ? `Chiffres de la sélection : ${metrics.scope}`
-    : `Chiffres sur ${metrics.scope.toLowerCase()}`;
+  $('#dashboard-metrics-scope').textContent = metrics.scope.length
+    ? `Chiffres de la sélection : ${metrics.scope.join(' · ')}`
+    : 'Chiffres sur tous les établissements suivis';
   const card = (modifier, label, value, note = '') =>
     `<div class="metric ${modifier}"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong>${note ? `<small>${escapeHtml(note)}</small>` : ''}</div>`;
   const pipeline = metrics.scheduled + metrics.toVisit;

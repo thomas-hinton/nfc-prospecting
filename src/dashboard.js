@@ -47,6 +47,8 @@ export const NO_CITY = '(sans commune)';
 
 /** The value `place` has for the commune filter — its commune, or NO_CITY. */
 const cityKey = (place) => place.city || NO_CITY;
+/** A commune filter value as displayed: the commune, or "Sans commune" for NO_CITY. */
+const cityLabel = (city) => (city === NO_CITY ? 'Sans commune' : city);
 
 /**
  * Whether `place` passes the Tableau de bord's filters: `city` (a commune, or NO_CITY),
@@ -70,7 +72,7 @@ function menuOptions(places, keyOf, labelOf) {
 function cityOptions(places) {
   const withCity = places.filter((place) => place.city);
   const options = menuOptions(withCity, cityKey, (place) => place.city);
-  return withCity.length < places.length ? [...options, { value: NO_CITY, label: 'Sans commune' }] : options;
+  return withCity.length < places.length ? [...options, { value: NO_CITY, label: cityLabel(NO_CITY) }] : options;
 }
 
 /**
@@ -152,9 +154,9 @@ const toCents = (amount) => Math.round(Number(amount || 0) * 100);
 /**
  * The Tableau de bord's metrics over the établissements `places` leaves under `filters` — the
  * filtered set, not the whole tracked list, so filtering to a commune reads "what have I sold
- * there, and what is left to do there". `scope` names that set ("Tous les établissements
- * suivis", or the chosen commune · type · statut), so a filtered figure can't be read as an
- * overall total; `filtered` says whether any filter narrows it.
+ * there, and what is left to do there". `scope` names that set, as the chosen commune, type
+ * and statut in that order (empty when nothing is filtered), so a filtered figure can't be
+ * read as an overall total.
  *
  * `revenue` is what the vendu établissements were sold for. `potentiel` is an estimate, not
  * revenue: the programmé and à-visiter établissements priced at the configured `salePrice`
@@ -163,22 +165,20 @@ const toCents = (amount) => Math.round(Number(amount || 0) * 100);
 export function dashboardMetrics(places, { filters = {}, salePrice }) {
   const { city = null, type = null, status = null } = filters;
   const listed = places.filter((place) => matchesFilters(place, filters));
-  const counted = (wanted) => listed.filter((place) => place.status === wanted);
-  const sold = counted('sold');
-  const scheduled = counted('scheduled').length;
-  const toVisit = counted('to_visit').length;
-  const scope = [
-    city == null ? null : city === NO_CITY ? 'Sans commune' : city,
-    type == null ? null : placeTypeLabel({ types: [type] }),
-    status == null ? null : (STATUS_LABELS[status] ?? status),
-  ].filter((part) => part != null);
+  const withStatus = (wanted) => listed.filter((place) => place.status === wanted);
+  const sold = withStatus('sold');
+  const scheduled = withStatus('scheduled').length;
+  const toVisit = withStatus('to_visit').length;
   return {
-    scope: scope.length ? scope.join(' · ') : 'Tous les établissements suivis',
-    filtered: scope.length > 0,
+    scope: [
+      city == null ? null : cityLabel(city),
+      type == null ? null : placeTypeLabel({ types: [type] }),
+      status == null ? null : (STATUS_LABELS[status] ?? status),
+    ].filter((part) => part != null),
     count: listed.length,
     sold: sold.length,
     revenue: sold.reduce((sum, place) => sum + toCents(place.saleAmount), 0) / 100,
-    refused: counted('refused').length,
+    refused: withStatus('refused').length,
     scheduled,
     toVisit,
     potentiel: salePrice == null ? null : ((scheduled + toVisit) * toCents(salePrice)) / 100,
