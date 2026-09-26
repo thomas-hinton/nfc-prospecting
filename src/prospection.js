@@ -10,8 +10,10 @@ import {
   dashboardPage,
   filterMenus,
   filteredPlaceIds,
+  filtersSet,
   matchesFilters,
   pruneSelection,
+  resetFilters,
   sortPlaces,
 } from './dashboard.js';
 import { renderPageStrip } from './page-strip.js';
@@ -197,7 +199,10 @@ function fillFilterSelect(select, allLabel, options, value) {
   select.value = value ?? '';
 }
 
-/** Redraws the filter menus and the sort controls of the Tableau de bord from `menus` (see `filterMenus`). */
+/**
+ * Redraws the filter menus, the « Réinitialiser les filtres » link — offered only while a filter
+ * is set — and the sort controls of the Tableau de bord from `menus` (see `filterMenus`).
+ */
 function renderDashboardControls(menus) {
   const { city, type, status } = menus.filters;
   const total = menus.statuses.reduce((sum, option) => sum + option.count, 0);
@@ -209,6 +214,7 @@ function renderDashboardControls(menus) {
     menus.statuses.map((option) => ({ ...option, label: `${option.label} (${option.count})` })),
     status
   );
+  $('#dashboard-filters-reset').classList.toggle('hidden', !filtersSet(menus.filters));
   const { key, direction } = state.dashboard.sort;
   $('#dashboard-sort').value = key;
   const directionButton = $('#dashboard-sort-direction');
@@ -305,7 +311,7 @@ function renderDashboardSelection(listed) {
   const locked = state.dashboard.bulkRunning;
   document.querySelectorAll('#dashboard-rows .select-cell input').forEach((checkbox) => (checkbox.disabled = locked));
   selectAll.disabled = locked || !listed.length;
-  ['city', 'type', 'status'].forEach((filter) => ($(`#dashboard-${filter}`).disabled = locked));
+  ['city', 'type', 'status', 'filters-reset'].forEach((control) => ($(`#dashboard-${control}`).disabled = locked));
   $('#dashboard-bulk-status').disabled = locked;
   $('#dashboard-selection-clear').disabled = locked;
   $('#dashboard-bulk-apply').disabled = locked;
@@ -902,6 +908,13 @@ async function start() {
   };
   ['city', 'type', 'status'].forEach((filter) => {
     $(`#dashboard-${filter}`).addEventListener('change', (event) => redrawDashboardFromFirstPage({ filters: { [filter]: event.target.value || null } }));
+  });
+  $('#dashboard-filters-reset').addEventListener('click', () => {
+    state.dashboard = resetFilters(state.dashboard);
+    setFormMessage('#dashboard-bulk-message', '');
+    renderDashboard();
+    // The link just hid itself with no filter left set; keep keyboard focus on the filters.
+    $('#dashboard-city').focus();
   });
   $('#dashboard-select-all').addEventListener('change', (event) => {
     // Ticks the whole filtered set, rows on other pages included — not just this page.

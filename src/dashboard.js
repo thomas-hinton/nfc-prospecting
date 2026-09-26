@@ -59,6 +59,20 @@ export function matchesFilters(place, { city = null, type = null, status = null 
   return (city == null || cityKey(place) === city) && (type == null || placeType(place) === type) && (status == null || place.status === status);
 }
 
+/** Whether any of the commune, type or statut filters is chosen — what « Réinitialiser les filtres » is offered for. */
+export function filtersSet({ city = null, type = null, status = null } = {}) {
+  return city != null || type != null || status != null;
+}
+
+/**
+ * The Tableau de bord's state (`{ page, pageSize, filters, sort, selection, … }`) with its
+ * filters back to « Toutes / Tous », from the first page, as a new object. It resets the
+ * filters only: the sort, its direction, the page size and the ticked selection are kept.
+ */
+export function resetFilters(dashboard) {
+  return { ...dashboard, filters: { city: null, type: null, status: null }, page: 1 };
+}
+
 const collator = new Intl.Collator('fr', { sensitivity: 'base', numeric: true });
 
 /** The distinct values `keyOf` takes over `places`, as menu options sorted by label (French-collated). */

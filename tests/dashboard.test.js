@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BULK_STATUSES, NO_CITY, SORT_COMPARATORS, bulkImpact, dashboardMetrics, dashboardPage, dashboardRow, filterMenus, matchesFilters, pruneSelection, sortPlaces } from '../src/dashboard.js';
+import { BULK_STATUSES, NO_CITY, SORT_COMPARATORS, bulkImpact, dashboardMetrics, dashboardPage, dashboardRow, filterMenus, filtersSet, matchesFilters, pruneSelection, resetFilters, sortPlaces } from '../src/dashboard.js';
 
 function place(overrides = {}) {
   return {
@@ -348,6 +348,53 @@ describe('dashboardMetrics', () => {
       refused: 0,
       potentiel: { scheduled: 0, toVisit: 0 },
     });
+  });
+});
+
+describe('filtersSet', () => {
+  it('is false while every filter reads « Toutes / Tous »', () => {
+    expect(filtersSet({ city: null, type: null, status: null })).toBe(false);
+    expect(filtersSet({})).toBe(false);
+  });
+
+  it('is true as soon as one of commune, type or statut is chosen', () => {
+    expect(filtersSet({ city: 'Bandol', type: null, status: null })).toBe(true);
+    expect(filtersSet({ city: null, type: 'bakery', status: null })).toBe(true);
+    expect(filtersSet({ city: null, type: null, status: 'sold' })).toBe(true);
+  });
+
+  it('counts "sans commune" as a chosen commune', () => {
+    expect(filtersSet({ city: NO_CITY })).toBe(true);
+  });
+});
+
+describe('resetFilters', () => {
+  const dashboard = {
+    page: 3,
+    pageSize: 50,
+    filters: { city: 'Bandol', type: 'bakery', status: 'scheduled' },
+    sort: { key: 'name', direction: 'asc' },
+    selection: new Set(['a', 'b']),
+  };
+
+  it('puts commune, type and statut back to « Toutes / Tous », from the first page', () => {
+    const reset = resetFilters(dashboard);
+    expect(reset.filters).toEqual({ city: null, type: null, status: null });
+    expect(filtersSet(reset.filters)).toBe(false);
+    expect(reset.page).toBe(1);
+  });
+
+  it('leaves the sort, its direction, the page size and the ticked selection alone', () => {
+    const reset = resetFilters(dashboard);
+    expect(reset.sort).toEqual({ key: 'name', direction: 'asc' });
+    expect(reset.pageSize).toBe(50);
+    expect(reset.selection).toEqual(new Set(['a', 'b']));
+  });
+
+  it('leaves the state it was given untouched', () => {
+    resetFilters(dashboard);
+    expect(dashboard.filters).toEqual({ city: 'Bandol', type: 'bakery', status: 'scheduled' });
+    expect(dashboard.page).toBe(3);
   });
 });
 
