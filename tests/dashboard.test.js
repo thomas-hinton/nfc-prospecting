@@ -295,52 +295,40 @@ describe('dashboardMetrics', () => {
   ];
 
   it('reads the whole tracked list when no filter is chosen', () => {
-    expect(dashboardMetrics(tracked, { filters: {}, salePrice: 50 })).toMatchObject({
-      scope: [],
-      count: 9,
+    expect(dashboardMetrics(tracked, { filters: {}, salePrice: 50 })).toEqual({
       sold: 3,
       revenue: 170.3,
-      refused: 1,
       scheduled: 1,
       toVisit: 3,
-      potentiel: 200,
+      refused: 1,
+      potentiel: { scheduled: 50, toVisit: 150 },
     });
   });
 
   it('reads only the filtered set: what is sold there, and what is left to do there', () => {
-    expect(dashboardMetrics(tracked, { filters: { city: 'Toulon' }, salePrice: 50 })).toMatchObject({
-      count: 3,
+    expect(dashboardMetrics(tracked, { filters: { city: 'Toulon' }, salePrice: 50 })).toEqual({
       sold: 1,
       revenue: 0.2,
-      refused: 0,
       scheduled: 0,
       toVisit: 2,
-      potentiel: 100,
+      refused: 0,
+      potentiel: { scheduled: 0, toVisit: 100 },
     });
-    expect(dashboardMetrics(tracked, { filters: { city: 'Bandol', type: 'bakery' }, salePrice: 50 })).toMatchObject({
-      count: 4,
+    expect(dashboardMetrics(tracked, { filters: { city: 'Bandol', type: 'bakery' }, salePrice: 50 })).toEqual({
       sold: 1,
       revenue: 50,
-      refused: 1,
       scheduled: 1,
       toVisit: 1,
-      potentiel: 100,
+      refused: 1,
+      potentiel: { scheduled: 50, toVisit: 50 },
     });
   });
 
-  it('names the set it covers, so a filtered figure is not mistaken for an overall total', () => {
-    const scope = (filters) => dashboardMetrics(tracked, { filters, salePrice: 50 }).scope;
-    expect(scope({})).toEqual([]);
-    expect(scope({ city: 'Toulon' })).toEqual(['Toulon']);
-    expect(scope({ city: NO_CITY, type: 'hair_care', status: 'non_compliant' })).toEqual(['Sans commune', 'hair care', 'Non conforme']);
-    expect(scope({ status: 'to_visit' })).toEqual(['À visiter']);
-  });
-
-  it('prices the potentiel at the configured sale price, so it moves when that price changes', () => {
-    const potentiel = (salePrice) => dashboardMetrics(tracked, { filters: {}, salePrice }).potentiel;
-    expect(potentiel(50)).toBe(200);
-    expect(potentiel(79.9)).toBe(319.6);
-    expect(potentiel(0)).toBe(0);
+  it('prices each stage’s potentiel at the configured sale price, so it moves when that price changes — the revenue does not', () => {
+    const at = (salePrice) => dashboardMetrics(tracked, { filters: {}, salePrice });
+    expect(at(50)).toMatchObject({ revenue: 170.3, potentiel: { scheduled: 50, toVisit: 150 } });
+    expect(at(79.9)).toMatchObject({ revenue: 170.3, potentiel: { scheduled: 79.9, toVisit: 239.7 } });
+    expect(at(0)).toMatchObject({ revenue: 170.3, potentiel: { scheduled: 0, toVisit: 0 } });
   });
 
   it('counts revenue only from vendu établissements, ignoring an amount left on any other statut', () => {
@@ -348,19 +336,17 @@ describe('dashboardMetrics', () => {
   });
 
   it('has no potentiel when the sale price is unknown', () => {
-    expect(dashboardMetrics(tracked, { filters: {}, salePrice: null }).potentiel).toBeNull();
+    expect(dashboardMetrics(tracked, { filters: {}, salePrice: null }).potentiel).toEqual({ scheduled: null, toVisit: null });
   });
 
   it('reads all zeros when nothing is tracked', () => {
     expect(dashboardMetrics([], { filters: {}, salePrice: 50 })).toEqual({
-      scope: [],
-      count: 0,
       sold: 0,
       revenue: 0,
-      refused: 0,
       scheduled: 0,
       toVisit: 0,
-      potentiel: 0,
+      refused: 0,
+      potentiel: { scheduled: 0, toVisit: 0 },
     });
   });
 });

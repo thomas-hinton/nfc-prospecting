@@ -154,33 +154,25 @@ const toCents = (amount) => Math.round(Number(amount || 0) * 100);
 /**
  * The Tableau de bord's metrics over the établissements `places` leaves under `filters` — the
  * filtered set, not the whole tracked list, so filtering to a commune reads "what have I sold
- * there, and what is left to do there". `scope` names that set, as the chosen commune, type
- * and statut in that order (empty when nothing is filtered), so a filtered figure can't be
- * read as an overall total.
+ * there, and what is left to do there".
  *
  * `revenue` is what the vendu établissements were sold for. `potentiel` is an estimate, not
- * revenue: the programmé and à-visiter établissements priced at the configured `salePrice`
+ * revenue, for each pipeline stage: its établissements priced at the configured `salePrice`
  * (see CONTEXT.md), so it moves with that price — and is null while the price is unknown.
  */
 export function dashboardMetrics(places, { filters = {}, salePrice }) {
-  const { city = null, type = null, status = null } = filters;
   const listed = places.filter((place) => matchesFilters(place, filters));
   const withStatus = (wanted) => listed.filter((place) => place.status === wanted);
   const sold = withStatus('sold');
   const scheduled = withStatus('scheduled').length;
   const toVisit = withStatus('to_visit').length;
+  const priced = (count) => (salePrice == null ? null : (count * toCents(salePrice)) / 100);
   return {
-    scope: [
-      city == null ? null : cityLabel(city),
-      type == null ? null : placeTypeLabel({ types: [type] }),
-      status == null ? null : (STATUS_LABELS[status] ?? status),
-    ].filter((part) => part != null),
-    count: listed.length,
     sold: sold.length,
     revenue: sold.reduce((sum, place) => sum + toCents(place.saleAmount), 0) / 100,
-    refused: withStatus('refused').length,
     scheduled,
     toVisit,
-    potentiel: salePrice == null ? null : ((scheduled + toVisit) * toCents(salePrice)) / 100,
+    refused: withStatus('refused').length,
+    potentiel: { scheduled: priced(scheduled), toVisit: priced(toVisit) },
   };
 }

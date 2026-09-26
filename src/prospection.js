@@ -157,29 +157,18 @@ async function loadSalePrice() {
   }
 }
 
-/** Redraws the Tableau de bord's metric cards over the filtered set, named by its `scope` (see `dashboardMetrics`). */
+/** Redraws the Tableau de bord's metric cards over the filtered set (see `dashboardMetrics`). */
 function renderDashboardMetrics(filters) {
   const metrics = dashboardMetrics(state.places, { filters, salePrice: state.salePrice });
-  $('#dashboard-metrics-scope').textContent = metrics.scope.length
-    ? `Chiffres de la sélection : ${metrics.scope.join(' · ')}`
-    : 'Chiffres sur tous les établissements suivis';
-  const card = (modifier, label, value, note = '') =>
-    `<div class="metric ${modifier}"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong>${note ? `<small>${escapeHtml(note)}</small>` : ''}</div>`;
-  const pipeline = metrics.scheduled + metrics.toVisit;
+  const card = (modifier, label, count, amount = '') =>
+    `<div class="metric ${modifier}"><span>${escapeHtml(label)}</span><strong>${count}</strong>${amount ? `<p class="metric-amount">${escapeHtml(amount)}</p>` : ''}</div>`;
+  // A potentiel is an estimate, not revenue: the « ≈ » sets it apart from the vendus' amount.
+  const potentiel = (amount) => (amount == null ? '—' : `≈ ${euros(amount)}`);
   $('#dashboard-metrics').innerHTML = [
-    card('total', 'Établissements', metrics.count),
-    card('sold', 'Vendus', metrics.sold, `${euros(metrics.revenue)} de chiffre d’affaires`),
+    card('sold', 'Vendus', metrics.sold, euros(metrics.revenue)),
+    card('scheduled', 'Programmés pour visite', metrics.scheduled, potentiel(metrics.potentiel.scheduled)),
+    card('visit', 'À visiter', metrics.toVisit, potentiel(metrics.potentiel.toVisit)),
     card('refused', 'Refusés', metrics.refused),
-    card('scheduled', 'Programmés pour visite', metrics.scheduled),
-    card('visit', 'À visiter', metrics.toVisit),
-    card(
-      'potentiel',
-      'Potentiel estimé',
-      metrics.potentiel == null ? '—' : `≈ ${euros(metrics.potentiel)}`,
-      metrics.potentiel == null
-        ? 'Prix de vente indisponible'
-        : `Estimation : ${pipeline} à visiter ou programmé${pipeline > 1 ? 's' : ''} × ${euros(state.salePrice)}, pas un chiffre d’affaires`
-    ),
   ].join('');
 }
 
