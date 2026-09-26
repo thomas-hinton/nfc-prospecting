@@ -54,7 +54,7 @@ body[data-requires-auth] { visibility:hidden; }
 .dashboard-grid { width:100%; border-collapse:collapse; font-size:12px; }
 .dashboard-grid th { padding:9px 10px; border-bottom:1px solid var(--line); color:var(--muted); font-size:11px; font-weight:800; text-align:left; white-space:nowrap; }
 .dashboard-grid td { padding:10px; border-bottom:1px solid var(--line); vertical-align:top; }
-.dashboard-grid .amount { text-align:left; white-space:nowrap; }
+.dashboard-grid .amount { text-align:center; white-space:nowrap; }
 .dashboard-grid tbody tr { cursor:pointer; }
 .dashboard-grid tbody tr:hover { background:#fafbfc; }
 .dashboard-grid td button { padding:0; border:0; background:none; color:var(--ink); font-size:13px; font-weight:750; text-align:left; }
