@@ -50,6 +50,7 @@ const state = {
   map: null,
   markers: new Map(),
   selectedId: null,
+  mapUnavailable: false,
   view: 'map',
   dashboard: { page: 1, pageSize: 25 },
 };
@@ -88,18 +89,21 @@ function renderPlaces() {
   renderMapPlaces();
 }
 
+/** Why the sidebar list is empty, for `renderSidebarList`. */
+function emptySidebarReason() {
+  if (state.mapUnavailable) return 'Carte indisponible : retrouve tes établissements dans le Tableau de bord.';
+  if (!state.map?.getBounds()) return 'Chargement de la carte…';
+  if (!state.places.length) return 'Tes établissements suivis apparaîtront ici.';
+  return 'Aucun établissement suivi dans cette zone de la carte.';
+}
+
 /** The sidebar list: the établissements `shown` on the map, or why there are none. */
-function renderPlaceList(shown) {
+function renderSidebarList(shown) {
   $('#map-list-count').textContent = `${shown.length} affiché${shown.length > 1 ? 's' : ''}`;
   const list = $('#place-list');
   list.innerHTML = '';
   if (!shown.length) {
-    const reason = !state.map
-      ? 'Les établissements affichés sur la carte apparaîtront ici.'
-      : state.places.length
-        ? 'Aucun établissement suivi dans cette zone de la carte.'
-        : 'Tes établissements suivis apparaîtront ici.';
-    list.innerHTML = `<p class="empty-list">${reason}</p>`;
+    list.innerHTML = `<p class="empty-list">${emptySidebarReason()}</p>`;
     return;
   }
   const template = $('#place-item-template');
@@ -243,7 +247,7 @@ export function placesOnMap(places, bounds, selectedId = null) {
 /** Redraws the markers and the sidebar list for the current frame — a local redraw, no Supabase or Google request. */
 function renderMapPlaces() {
   const { inFrame, shown } = placesOnMap(state.places, state.map?.getBounds(), state.selectedId);
-  renderPlaceList(shown);
+  renderSidebarList(shown);
   if (!state.map || !window.google) return;
   state.markers.forEach((marker) => marker.setMap(null));
   state.markers.clear();
@@ -602,6 +606,12 @@ function loadGoogleMapsScript(apiKey) {
   });
 }
 
+/** No map this session, so no markers and no sidebar list: says so where the list would be. */
+function showMapUnavailable() {
+  state.mapUnavailable = true;
+  renderSidebarList([]);
+}
+
 async function initMap(googleMapsApiKey) {
   const placeholderText = $('#map-placeholder-text');
 
@@ -613,6 +623,7 @@ async function initMap(googleMapsApiKey) {
         ? `${QUOTA_MESSAGE} La carte sera disponible le mois prochain.`
         : 'Impossible de vérifier le quota Google. Réessaie plus tard.';
     if (!(error instanceof QuotaExceededError)) console.error(error);
+    showMapUnavailable();
     return;
   }
 
@@ -621,6 +632,7 @@ async function initMap(googleMapsApiKey) {
   } catch (error) {
     console.error(error);
     placeholderText.textContent = 'La carte ne se charge pas. Réessaie plus tard.';
+    showMapUnavailable();
     return;
   }
 
@@ -658,6 +670,7 @@ async function start() {
     $('#search-button').disabled = true;
     $('#center-button').disabled = true;
     $('#scan-button').disabled = true;
+    showMapUnavailable();
     return;
   }
 

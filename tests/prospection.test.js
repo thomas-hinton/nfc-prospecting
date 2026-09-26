@@ -28,6 +28,15 @@ function fakeBounds({ south = 43.17, west = 5.7, north = 43.19, east = 5.73 } = 
   };
 }
 
+function place(overrides = {}) {
+  return { placeId: `place-${Math.random()}`, status: 'to_visit', lat: 43.18, lng: 5.71, ...overrides };
+}
+
+/** `count` établissements packed into the default `fakeBounds()` frame, 20 to a column. */
+function denseZone(count) {
+  return Array.from({ length: count }, (_, index) => place({ placeId: `place-${index}`, lat: 43.17 + (index % 20) * 0.001, lng: 5.7 + Math.floor(index / 20) * 0.001 }));
+}
+
 describe('zoneCells', () => {
   it('splits the visible bounds into a grid of at least 3x3 cells', () => {
     const cells = zoneCells(fakeBounds());
@@ -46,9 +55,6 @@ describe('zoneCells', () => {
 });
 
 describe('chooseVisibleMarkers', () => {
-  function place(overrides = {}) {
-    return { placeId: `place-${Math.random()}`, status: 'to_visit', lat: 43.18, lng: 5.71, ...overrides };
-  }
 
   it('returns every place unchanged when under the visible-marker cap', () => {
     const places = Array.from({ length: 10 }, () => place());
@@ -61,7 +67,7 @@ describe('chooseVisibleMarkers', () => {
   });
 
   it('caps the result at MAX_VISIBLE_MARKERS (250) for a dense zone', () => {
-    const places = Array.from({ length: 300 }, (_, index) => place({ placeId: `place-${index}`, lat: 43.17 + (index % 20) * 0.001, lng: 5.7 + Math.floor(index / 20) * 0.001 }));
+    const places = denseZone(300);
     const displayed = chooseVisibleMarkers(places, fakeBounds());
     expect(displayed.length).toBe(250);
     expect(new Set(displayed.map((p) => p.placeId)).size).toBe(250);
@@ -77,7 +83,7 @@ describe('chooseVisibleMarkers', () => {
   });
 
   it('always keeps the selected marker visible even when it would otherwise be sampled out', () => {
-    const places = Array.from({ length: 300 }, (_, index) => place({ placeId: `place-${index}`, lat: 43.17 + (index % 20) * 0.001, lng: 5.7 + Math.floor(index / 20) * 0.001 }));
+    const places = denseZone(300);
     const targetId = places[150].placeId;
     const displayed = chooseVisibleMarkers(places, fakeBounds(), targetId);
     expect(displayed.some((p) => p.placeId === targetId)).toBe(true);
@@ -85,13 +91,6 @@ describe('chooseVisibleMarkers', () => {
 });
 
 describe('placesOnMap', () => {
-  function place(overrides = {}) {
-    return { placeId: `place-${Math.random()}`, status: 'to_visit', lat: 43.18, lng: 5.71, ...overrides };
-  }
-
-  function denseZone(count) {
-    return Array.from({ length: count }, (_, index) => place({ placeId: `place-${index}`, lat: 43.17 + (index % 20) * 0.001, lng: 5.7 + Math.floor(index / 20) * 0.001 }));
-  }
 
   it('shows the établissements inside the map frame, leaving out those outside it', () => {
     const inside = place({ placeId: 'inside' });
