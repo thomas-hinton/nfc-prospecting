@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#101828" />
     <title>NFC Prospection · Prospection</title>
-    <link rel="stylesheet" href="styles.css?v=46" />
+    <link rel="stylesheet" href="styles.css?v=47" />
   </head>
   <body data-requires-auth data-page="prospection">
     <div id="app-shell">
@@ -75,6 +75,24 @@
             <p id="dashboard-summary"></p>
           </div>
           <div class="dashboard-list-section">
+            <div class="dashboard-controls">
+              <label>Commune <select id="dashboard-city"></select></label>
+              <label>Type <select id="dashboard-type"></select></label>
+              <label>Statut <select id="dashboard-status"></select></label>
+              <label>Trier par
+                <span class="dashboard-sort">
+                  <select id="dashboard-sort">
+                    <option value="name">Nom</option>
+                    <option value="city">Commune</option>
+                    <option value="type">Type</option>
+                    <option value="status">Statut</option>
+                    <option value="createdAt" selected>Date d’ajout</option>
+                    <option value="statusChangedAt">Dernier changement de statut</option>
+                  </select>
+                  <button id="dashboard-sort-direction" type="button"></button>
+                </span>
+              </label>
+            </div>
             <div class="dashboard-table-scroll">
               <table class="dashboard-grid">
                 <thead>

@@ -2,7 +2,7 @@ import { bootstrapStore } from './bootstrap.js';
 import { readConfig } from './supabase-client.js';
 import { STATUS_LABELS, euros } from './store.js';
 import { placeTypeLabel } from './place-fields.js';
-import { dashboardPage } from './dashboard.js';
+import { dashboardPage, filterMenus, matchesFilters, sortPlaces } from './dashboard.js';
 import { renderPageStrip } from './page-strip.js';
 
 /**
@@ -11,9 +11,9 @@ import { renderPageStrip } from './page-strip.js';
  * JavaScript call goes through the store's `checkAndConsumeQuota()` first.
  *
  * The map shares its area with a second view, the Tableau de bord: a paginated table of
- * every tracked établissement. Both views draw the same `state.places`, loaded once. The
- * sidebar list belongs to the map view: it lists exactly the établissements whose markers are
- * drawn, and is hidden while the Tableau de bord is on screen.
+ * every tracked établissement, filtered and sorted client-side. Both views draw the same
+ * `state.places`, loaded once. The sidebar list belongs to the map view: it lists exactly the
+ * établissements whose markers are drawn, and is hidden while the Tableau de bord is on screen.
  */
 
 const STATUS_COLORS = { to_visit: '#55a7e8', scheduled: '#e5b72b', sold: '#22a06b', refused: '#e5484d', non_compliant: '#a1a9b7' };
@@ -52,7 +52,12 @@ const state = {
   selectedId: null,
   mapUnavailable: false,
   view: 'map',
-  dashboard: { page: 1, pageSize: 25 },
+  dashboard: {
+    page: 1,
+    pageSize: 25,
+    filters: { city: null, type: null, status: null },
+    sort: { key: 'createdAt', direction: 'desc' },
+  },
 };
 
 function setFormMessage(id, text, isError = false) {
@@ -134,15 +139,54 @@ function showView(view) {
   renderDashboard();
 }
 
+/** Fills `select` with an "all" entry (value "") then `options`, and selects `value` (null for "all"). */
+function fillFilterSelect(select, allLabel, options, value) {
+  select.innerHTML = [{ value: '', label: allLabel }, ...options]
+    .map((option) => `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}</option>`)
+    .join('');
+  select.value = value ?? '';
+}
+
+/** Redraws the filter menus and the sort controls of the Tableau de bord from `menus` (see `filterMenus`). */
+function renderDashboardControls(menus) {
+  const { city, type, status } = menus.filters;
+  const total = menus.statuses.reduce((sum, option) => sum + option.count, 0);
+  fillFilterSelect($('#dashboard-city'), 'Toutes les communes', menus.cities, city);
+  fillFilterSelect($('#dashboard-type'), 'Tous les types', menus.types, type);
+  fillFilterSelect(
+    $('#dashboard-status'),
+    `Tous les statuts (${total})`,
+    menus.statuses.map((option) => ({ value: option.value, label: `${option.label} (${option.count})` })),
+    status
+  );
+  const { key, direction } = state.dashboard.sort;
+  $('#dashboard-sort').value = key;
+  const directionButton = $('#dashboard-sort-direction');
+  directionButton.textContent = direction === 'asc' ? '↑ Croissant' : '↓ Décroissant';
+  directionButton.setAttribute('aria-label', `Ordre ${direction === 'asc' ? 'croissant' : 'décroissant'}, cliquer pour inverser`);
+}
+
 /** Redraws the Tableau de bord from `state.places` — only while it is the view on screen. */
 function renderDashboard() {
   if (state.view !== 'dashboard') return;
-  const shown = dashboardPage(state.places, state.dashboard);
+  const menus = filterMenus(state.places, state.dashboard.filters);
+  state.dashboard.filters = menus.filters;
+  renderDashboardControls(menus);
+  const listed = sortPlaces(
+    state.places.filter((place) => matchesFilters(place, menus.filters)),
+    state.dashboard.sort
+  );
+  const shown = dashboardPage(listed, state.dashboard);
   state.dashboard.page = shown.page;
 
-  $('#dashboard-summary').textContent = shown.total
-    ? `${shown.first}-${shown.last} sur ${shown.total} établissement${shown.total > 1 ? 's' : ''} suivi${shown.total > 1 ? 's' : ''}`
-    : 'Aucun établissement suivi pour le moment.';
+  const tracked = state.places.length;
+  const plural = (count) => (count > 1 ? 's' : '');
+  const range = `${shown.first}-${shown.last} sur ${shown.total} établissement${plural(shown.total)}`;
+  $('#dashboard-summary').textContent = !tracked
+    ? 'Aucun établissement suivi pour le moment.'
+    : shown.total === tracked
+      ? `${range} suivi${plural(tracked)}`
+      : `${range} (sur ${tracked} suivi${plural(tracked)})`;
 
   const body = $('#dashboard-rows');
   body.innerHTML = shown.rows.length
@@ -152,7 +196,7 @@ function renderDashboard() {
             `<tr data-id="${escapeHtml(row.placeId)}"><td><button type="button">${escapeHtml(row.name)}</button><small>${escapeHtml(row.address)}</small></td><td>${escapeHtml(row.city) || '—'}</td><td>${escapeHtml(row.type)}</td><td><span class="status-dot ${escapeHtml(row.status)}"></span>${escapeHtml(row.statusLabel)}</td><td class="amount">${escapeHtml(row.saleAmount)}</td></tr>`
         )
         .join('')
-    : '<tr><td class="dashboard-empty" colspan="5">Tes établissements suivis apparaîtront ici.</td></tr>';
+    : `<tr><td class="dashboard-empty" colspan="5">${tracked ? 'Aucun établissement ne correspond à ces filtres.' : 'Tes établissements suivis apparaîtront ici.'}</td></tr>`;
   body.querySelectorAll('tr[data-id]').forEach((tableRow) => {
     tableRow.addEventListener('click', () => {
       showView('map');
@@ -674,6 +718,28 @@ async function start() {
   });
   $('#dashboard-size').addEventListener('change', (event) => {
     state.dashboard.pageSize = Number(event.target.value);
+    state.dashboard.page = 1;
+    renderDashboard();
+  });
+  [
+    ['#dashboard-city', 'city'],
+    ['#dashboard-type', 'type'],
+    ['#dashboard-status', 'status'],
+  ].forEach(([selector, filter]) => {
+    $(selector).addEventListener('change', (event) => {
+      state.dashboard.filters = { ...state.dashboard.filters, [filter]: event.target.value || null };
+      state.dashboard.page = 1;
+      renderDashboard();
+    });
+  });
+  $('#dashboard-sort').addEventListener('change', (event) => {
+    state.dashboard.sort = { ...state.dashboard.sort, key: event.target.value };
+    state.dashboard.page = 1;
+    renderDashboard();
+  });
+  $('#dashboard-sort-direction').addEventListener('click', () => {
+    const { direction } = state.dashboard.sort;
+    state.dashboard.sort = { ...state.dashboard.sort, direction: direction === 'asc' ? 'desc' : 'asc' };
     state.dashboard.page = 1;
     renderDashboard();
   });
