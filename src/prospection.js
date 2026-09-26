@@ -13,6 +13,7 @@ import {
   anyFilterChosen,
   matchesFilters,
   NO_FILTERS,
+  plural,
   printedDocument,
   pruneSelection,
   sortPlaces,
@@ -44,8 +45,6 @@ const SORT_DIRECTIONS = {
 };
 
 const $ = (selector) => document.querySelector(selector);
-/** The French plural "s" for `count` of something. */
-const plural = (count) => (count > 1 ? 's' : '');
 const escapeHtml = (text = '') =>
   String(text).replace(/[&<>'"]/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[character]);
 

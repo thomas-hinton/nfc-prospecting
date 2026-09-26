@@ -7,6 +7,9 @@ import { placeType, placeTypeLabel } from './place-fields.js';
  * Prospection page draws what these return.
  */
 
+/** The French plural "s" for `count` of something. */
+export const plural = (count) => (count > 1 ? 's' : '');
+
 /**
  * What one table row shows for `place`, already formatted for display. The sale amount is
  * only shown for a vendu établissement; a missing commune (`city`) is left empty.
@@ -245,8 +248,8 @@ export function printedPlaces(listed, selection) {
   return selection.size ? listed.filter((place) => selection.has(place.placeId)) : listed;
 }
 
-const printedOn = new Intl.DateTimeFormat('fr-FR', { dateStyle: 'long' });
-const printedAt = new Intl.DateTimeFormat('fr-FR', { timeStyle: 'short' });
+const printDateFormat = new Intl.DateTimeFormat('fr-FR', { dateStyle: 'long' });
+const printTimeFormat = new Intl.DateTimeFormat('fr-FR', { timeStyle: 'short' });
 
 /**
  * The printed Tableau de bord as of `producedAt`: a row per établissement in `printedPlaces`,
@@ -255,6 +258,6 @@ const printedAt = new Intl.DateTimeFormat('fr-FR', { timeStyle: 'short' });
  */
 export function printedDocument(listed, selection, producedAt) {
   const rows = printedPlaces(listed, selection).map(dashboardRow);
-  const count = `${rows.length} établissement${rows.length > 1 ? 's' : ''}`;
-  return { rows, caption: `${count} · édité le ${printedOn.format(producedAt)} à ${printedAt.format(producedAt)}` };
+  const count = `${rows.length} établissement${plural(rows.length)}`;
+  return { rows, caption: `${count} · édité le ${printDateFormat.format(producedAt)} à ${printTimeFormat.format(producedAt)}` };
 }
