@@ -1,11 +1,35 @@
 import { bootstrapStore } from './bootstrap.js';
 import { readConfig } from './supabase-client.js';
 import { STATUS_LABELS, euros } from './store.js';
+import { placeTypeLabel } from './place-fields.js';
+import {
+  BULK_STATUSES,
+  bulkImpact,
+  bulkMoves,
+  dashboardMetrics,
+  dashboardPage,
+  filterMenus,
+  filteredPlaceIds,
+  anyFilterChosen,
+  matchesFilters,
+  NO_FILTERS,
+  plural,
+  printedDocument,
+  pruneSelection,
+  sortPlaces,
+} from './dashboard.js';
+import { renderPageStrip } from './page-strip.js';
 
 /**
  * The Prospection page: text search for a business, add it to the tracked list, see it on
  * the map, and copy/open its Google Maps link for NFC encoding. Every Google Places / Maps
  * JavaScript call goes through the store's `checkAndConsumeQuota()` first.
+ *
+ * The map view has a second view beside it, the Tableau de bord: a paginated table of every
+ * tracked établissement, filtered and sorted client-side, taking the whole page below the top
+ * bar. Both views draw the same `state.places`, loaded once. The sidebar belongs to the map
+ * view — its forms act on the map, and its list shows exactly the établissements whose markers
+ * are drawn — so it is hidden, with the map, while the Tableau de bord is on screen.
  */
 
 const STATUS_COLORS = { to_visit: '#55a7e8', scheduled: '#e5b72b', sold: '#22a06b', refused: '#e5484d', non_compliant: '#a1a9b7' };
@@ -15,15 +39,15 @@ const DEFAULT_CENTER = { lat: 43.1808, lng: 5.7115 };
 const QUOTA_MESSAGE = 'Limite mensuelle de requêtes Google atteinte.';
 const MAX_ZONE_REQUESTS = 100;
 const MAX_VISIBLE_MARKERS = 250;
+/** The Tableau de bord's sort directions: the direction button's label and spoken word, and what a click switches to. */
+const SORT_DIRECTIONS = {
+  asc: { label: '↑ Croissant', word: 'croissant', next: 'desc' },
+  desc: { label: '↓ Décroissant', word: 'décroissant', next: 'asc' },
+};
 
 const $ = (selector) => document.querySelector(selector);
 const escapeHtml = (text = '') =>
   String(text).replace(/[&<>'"]/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[character]);
-
-function placeType(place) {
-  const ignored = new Set(['point_of_interest', 'establishment', 'food', 'store', 'premise']);
-  return (place.types || []).find((type) => !ignored.has(type)) || 'Autre';
-}
 
 function mapsUrl(place) {
   const query = encodeURIComponent(`${place.name} ${place.address}`.trim());
@@ -42,11 +66,31 @@ function markerIcon(status, selected) {
 }
 
 let store = null;
-const state = { places: [], map: null, markers: new Map(), selectedId: null };
+const state = {
+  places: [],
+  map: null,
+  markers: new Map(),
+  selectedId: null,
+  mapUnavailable: false,
+  view: 'map',
+  mapViewScrollY: 0,
+  /** The configured sale price the potentiel is estimated at; null until read (or if it can't be). */
+  salePrice: null,
+  dashboard: {
+    page: 1,
+    pageSize: 25,
+    filters: NO_FILTERS,
+    sort: { key: 'createdAt', direction: 'desc' },
+    /** The ticked établissements' placeIds — always within the filtered set, rows on other pages included. */
+    selection: new Set(),
+    /** Whether a bulk change is running: the selection and the filters are locked until it ends. */
+    bulkRunning: false,
+  },
+};
 
 function setFormMessage(id, text, isError = false) {
   const message = $(id);
-  message.className = `form-message${isError ? ' error' : ''}`;
+  message.classList.toggle('error', isError);
   message.textContent = text;
 }
 
@@ -72,18 +116,37 @@ async function withBusyButton(button, busyLabel, task) {
   }
 }
 
-function renderPlaceList() {
-  $('#saved-count').textContent = state.places.length;
+/** Redraws both views after `state.places` changed. */
+function renderPlaces() {
+  renderDashboard();
+  renderMapPlaces();
+}
+
+/** Why the sidebar list is empty, for `renderSidebarList`. */
+function emptySidebarReason() {
+  if (state.mapUnavailable) return 'Carte indisponible : retrouve tes établissements dans le Tableau de bord.';
+  if (!state.map?.getBounds()) return 'Chargement de la carte…';
+  if (!state.places.length) return 'Tes établissements suivis apparaîtront ici.';
+  return 'Aucun établissement suivi dans cette zone de la carte.';
+}
+
+/** The sidebar list: the établissements `shown` on the map, or why there are none. */
+function renderSidebarList(shown) {
+  $('#map-list-count').textContent = `${shown.length} affiché${shown.length > 1 ? 's' : ''}`;
   const list = $('#place-list');
   list.innerHTML = '';
-  if (!state.places.length) {
-    list.innerHTML = '<p class="empty-list">Tes établissements suivis apparaîtront ici.</p>';
+  if (!shown.length) {
+    list.innerHTML = `<p class="empty-list">${emptySidebarReason()}</p>`;
     return;
   }
   const template = $('#place-item-template');
-  state.places.forEach((place) => {
+  shown.forEach((place) => {
     const item = template.content.firstElementChild.cloneNode(true);
     item.dataset.id = place.placeId;
+    if (place.placeId === state.selectedId) {
+      item.classList.add('selected');
+      item.querySelector('.place-item-main').setAttribute('aria-current', 'true');
+    }
     const dot = item.querySelector('.status-dot');
     if (place.status !== 'to_visit') dot.classList.add(place.status);
     item.querySelector('strong').textContent = place.name;
@@ -91,6 +154,253 @@ function renderPlaceList() {
     item.querySelector('.place-item-main').addEventListener('click', () => selectPlace(place.placeId, true));
     list.appendChild(item);
   });
+}
+
+/**
+ * Shows the map view (sidebar and map) or the Tableau de bord in their place. It is a display
+ * change only: the stylesheet hides the sidebar and the map without removing them or changing
+ * the map's size, so the map is never redrawn and both come back exactly as they were left.
+ */
+function showView(view) {
+  if (view === state.view) return;
+  // At phone width the page itself scrolls: open the Tableau de bord at its top, and give the map view back its scroll.
+  if (view === 'dashboard') state.mapViewScrollY = window.scrollY;
+  state.view = view;
+  document.querySelectorAll('.view-switch [data-view]').forEach((button) => {
+    button.setAttribute('aria-pressed', String(button.dataset.view === view));
+  });
+  $('#app-shell').dataset.view = view;
+  $('#dashboard-panel').classList.toggle('hidden', view !== 'dashboard');
+  window.scrollTo(0, view === 'dashboard' ? 0 : state.mapViewScrollY);
+  renderDashboard();
+  // The sale price may have been changed in the settings since it was last read: re-read it, so the potentiel follows.
+  if (view === 'dashboard') loadSalePrice().then(renderDashboard);
+}
+
+/** Reads the configured sale price into `state.salePrice`, keeping the last one read if it can't. */
+async function loadSalePrice() {
+  try {
+    state.salePrice = (await store.getSettings()).salePrice;
+  } catch (error) {
+    console.error(error);
+  }
+}
+
+/** Redraws the Tableau de bord's metric cards over the filtered set (see `dashboardMetrics`). */
+function renderDashboardMetrics(filters) {
+  const metrics = dashboardMetrics(state.places, { filters, salePrice: state.salePrice });
+  const card = (modifier, label, count, figure = '') =>
+    `<div class="metric ${modifier}"><span>${escapeHtml(label)}</span><strong>${escapeHtml(count)}</strong>${figure ? `<p class="metric-amount">${escapeHtml(figure)}</p>` : ''}</div>`;
+  // A potentiel is an estimate, not revenue: the « ≈ » sets it apart from the vendus' amount.
+  const estimate = (potentiel) => (potentiel == null ? '—' : `≈ ${euros(potentiel)}`);
+  $('#dashboard-metrics').innerHTML = [
+    card('sold', 'Vendus', metrics.sold, euros(metrics.revenue)),
+    card('scheduled', 'Programmés pour visite', metrics.scheduled, estimate(metrics.potentiel.scheduled)),
+    card('visit', 'À visiter', metrics.toVisit, estimate(metrics.potentiel.toVisit)),
+    card('refused', 'Refusés', metrics.refused),
+  ].join('');
+}
+
+/** Fills `select` with an "all" entry (value "") then `options` (greyed out when `disabled`), and selects `value` (null for "all"). */
+function fillFilterSelect(select, allLabel, options, value) {
+  select.innerHTML = [{ value: '', label: allLabel }, ...options]
+    .map((option) => `<option value="${escapeHtml(option.value)}"${option.disabled ? ' disabled' : ''}>${escapeHtml(option.label)}</option>`)
+    .join('');
+  select.value = value ?? '';
+}
+
+/**
+ * Redraws the filter menus, the « Réinitialiser les filtres » link — offered only while a filter
+ * is set — and the sort controls of the Tableau de bord from `menus` (see `filterMenus`).
+ */
+function renderDashboardControls(menus) {
+  const { city, type, status } = menus.filters;
+  const total = menus.statuses.reduce((sum, option) => sum + option.count, 0);
+  fillFilterSelect($('#dashboard-city'), 'Toutes les communes', menus.cities, city);
+  fillFilterSelect($('#dashboard-type'), 'Tous les types', menus.types, type);
+  fillFilterSelect(
+    $('#dashboard-status'),
+    `Tous les statuts (${total})`,
+    menus.statuses.map((option) => ({ ...option, label: `${option.label} (${option.count})` })),
+    status
+  );
+  $('#dashboard-filters-reset').classList.toggle('hidden', !anyFilterChosen(menus.filters));
+  const { key, direction } = state.dashboard.sort;
+  $('#dashboard-sort').value = key;
+  const directionButton = $('#dashboard-sort-direction');
+  directionButton.textContent = SORT_DIRECTIONS[direction].label;
+  directionButton.setAttribute('aria-label', `Ordre ${SORT_DIRECTIONS[direction].word}, cliquer pour inverser`);
+}
+
+/** The Tableau de bord's filtered set, in its sort order — every page of it. */
+function dashboardListed() {
+  return sortPlaces(
+    state.places.filter((place) => matchesFilters(place, state.dashboard.filters)),
+    state.dashboard.sort
+  );
+}
+
+/**
+ * Fills the print-only container with the printed Tableau de bord (see `printedDocument`): the
+ * ticked établissements, or else the whole filtered set, from the list in memory rather than
+ * the rows on screen — so a print of a many-page list holds every page. Run just before the
+ * browser prints, whichever way the print was asked for (the button, or the browser's own).
+ */
+function renderDashboardPrint() {
+  const printed = printedDocument(dashboardListed(), state.dashboard.selection, new Date());
+  $('#dashboard-print-caption').textContent = printed.caption;
+  $('#dashboard-print-rows').innerHTML = printed.rows
+    .map(
+      (row) =>
+        `<tr><td><strong>${escapeHtml(row.name)}</strong><small>${escapeHtml(row.address)}</small></td><td>${escapeHtml(row.city) || '—'}</td><td>${escapeHtml(row.type)}</td><td>${escapeHtml(row.statusLabel)}</td><td class="amount">${escapeHtml(row.saleAmount)}</td></tr>`
+    )
+    .join('');
+}
+
+/** Redraws the Tableau de bord from `state.places` — only while it is the view on screen. */
+function renderDashboard() {
+  if (state.view !== 'dashboard') return;
+  const menus = filterMenus(state.places, state.dashboard.filters);
+  state.dashboard.filters = menus.filters;
+  state.dashboard.selection = pruneSelection(state.dashboard.selection, state.places, menus.filters);
+  renderDashboardControls(menus);
+  renderDashboardMetrics(menus.filters);
+  const listed = dashboardListed();
+  const shown = dashboardPage(listed, state.dashboard);
+  state.dashboard.page = shown.page;
+
+  const tracked = state.places.length;
+  const range = `${shown.first}-${shown.last} sur ${shown.total} établissement${plural(shown.total)}`;
+  // filterMenus never leaves the filters emptying the list, so it is only empty with nothing tracked.
+  $('#dashboard-summary').textContent = !tracked
+    ? 'Aucun établissement suivi pour le moment.'
+    : shown.total === tracked
+      ? `${range} suivi${plural(tracked)}`
+      : `${range} (sur ${tracked} suivi${plural(tracked)})`;
+
+  const body = $('#dashboard-rows');
+  body.innerHTML = shown.rows.length
+    ? shown.rows
+        .map(
+          (row) =>
+            `<tr data-id="${escapeHtml(row.placeId)}"><td class="select-cell"><input type="checkbox" aria-label="Sélectionner ${escapeHtml(row.name)}"></td><td><button type="button">${escapeHtml(row.name)}</button><small>${escapeHtml(row.address)}</small></td><td>${escapeHtml(row.city) || '—'}</td><td>${escapeHtml(row.type)}</td><td><span class="status-dot ${escapeHtml(row.status)}"></span>${escapeHtml(row.statusLabel)}</td><td class="amount">${escapeHtml(row.saleAmount)}</td></tr>`
+        )
+        .join('')
+    : '<tr><td class="dashboard-empty" colspan="6">Tes établissements suivis apparaîtront ici.</td></tr>';
+  body.querySelectorAll('tr[data-id]').forEach((tableRow) => {
+    tableRow.querySelector('.select-cell input').addEventListener('change', (event) => {
+      if (event.target.checked) state.dashboard.selection.add(tableRow.dataset.id);
+      else state.dashboard.selection.delete(tableRow.dataset.id);
+      setFormMessage('#dashboard-bulk-message', '');
+      renderDashboardSelection(listed);
+    });
+    tableRow.addEventListener('click', (event) => {
+      // Ticking a row selects it; only a click elsewhere on the row opens it on the map.
+      if (event.target.closest('.select-cell')) return;
+      showView('map');
+      // At phone width the map sits at the top of the page: bring it on screen, wherever the map view was scrolled.
+      window.scrollTo(0, 0);
+      selectPlace(tableRow.dataset.id, true);
+    });
+  });
+
+  renderDashboardSelection(listed);
+
+  renderPageStrip($('#dashboard-page-strip'), {
+    page: shown.page,
+    totalPages: shown.totalPages,
+    onSelect: (page) => {
+      state.dashboard.page = page;
+      renderDashboard();
+      // The Tableau de bord scrolls inside its panel at desktop width, with the page at phone width.
+      $('#dashboard-panel').scrollTop = 0;
+      window.scrollTo(0, 0);
+    },
+  });
+}
+
+/**
+ * Redraws what shows the selection without rebuilding the rows: the row and header ticks, and
+ * the action bar — shown only while something is ticked — with its count (and how many of the
+ * ticked rows are off this page) and controls. `listed` is the filtered set, which the selection
+ * is within.
+ */
+function renderDashboardSelection(listed) {
+  const { selection } = state.dashboard;
+  let onPage = 0;
+  document.querySelectorAll('#dashboard-rows tr[data-id]').forEach((tableRow) => {
+    const ticked = selection.has(tableRow.dataset.id);
+    tableRow.querySelector('.select-cell input').checked = ticked;
+    tableRow.classList.toggle('is-selected', ticked);
+    if (ticked) onPage += 1;
+  });
+
+  const selectAll = $('#dashboard-select-all');
+  selectAll.checked = listed.length > 0 && selection.size === listed.length;
+  selectAll.indeterminate = selection.size > 0 && selection.size < listed.length;
+
+  const count = selection.size;
+  const elsewhere = count - onPage;
+  $('#dashboard-bulk').classList.toggle('hidden', !count);
+  $('#dashboard-selection-count').textContent = `${count} établissement${plural(count)} sélectionné${plural(count)}${elsewhere ? ` (dont ${elsewhere} sur d’autres pages)` : ''}`;
+  // While a bulk change runs, what it acts on is frozen: no ticking, no clearing, no filtering.
+  const locked = state.dashboard.bulkRunning;
+  document.querySelectorAll('#dashboard-rows .select-cell input').forEach((checkbox) => (checkbox.disabled = locked));
+  selectAll.disabled = locked || !listed.length;
+  ['city', 'type', 'status'].forEach((filter) => ($(`#dashboard-${filter}`).disabled = locked));
+  $('#dashboard-filters-reset').disabled = locked;
+  $('#dashboard-bulk-status').disabled = locked;
+  $('#dashboard-selection-clear').disabled = locked;
+  $('#dashboard-bulk-apply').disabled = locked;
+}
+
+/** The confirmation every bulk change is preceded by, from its `impact` (see `bulkImpact`). */
+function bulkConfirmation(impact) {
+  const { count, unchanged, statusLabel, soldCount, amountCleared } = impact;
+  let text = `Passer ${count} établissement${plural(count)} au statut « ${statusLabel} » ?`;
+  if (unchanged) text += `\n(${unchanged} déjà à ce statut ne change${unchanged > 1 ? 'nt' : ''} pas.)`;
+  if (soldCount) {
+    text += `\n\n${soldCount} ${soldCount > 1 ? 'sont vendus' : 'est vendu'} : ${soldCount > 1 ? 'leurs montants de vente seront supprimés' : 'son montant de vente sera supprimé'}, soit ${euros(amountCleared)} au total.`;
+  }
+  return text;
+}
+
+/** Moves every ticked établissement to the statut picked in the action bar, after a confirmation. */
+async function onBulkStatusChange() {
+  const status = $('#dashboard-bulk-status').value;
+  const selected = state.places.filter((place) => state.dashboard.selection.has(place.placeId));
+  const impact = bulkImpact(selected, status);
+  if (!impact.count) {
+    setFormMessage('#dashboard-bulk-message', `Ces établissements sont déjà au statut « ${impact.statusLabel} ».`);
+    return;
+  }
+  if (!window.confirm(bulkConfirmation(impact))) return;
+
+  setFormMessage('#dashboard-bulk-message', 'Changement de statut en cours…');
+  state.dashboard.bulkRunning = true;
+  renderDashboard();
+  await withBusyButton($('#dashboard-bulk-apply'), 'Modification…', async () => {
+    let report;
+    try {
+      report = await runBulkStatusChange({ places: selected, status, store });
+    } finally {
+      state.dashboard.bulkRunning = false;
+    }
+    applyPlaceUpdates(report.updated);
+    const moved = `${report.changed} établissement${plural(report.changed)} passé${plural(report.changed)} au statut « ${impact.statusLabel} »`;
+    if (report.error) {
+      console.error(report.error);
+      setFormMessage(
+        '#dashboard-bulk-message',
+        `Arrêt sur « ${report.failed.name} » : ${moved} sur ${report.total}. Réessaie : les établissements déjà modifiés ne le seront pas deux fois.`,
+        true
+      );
+      return;
+    }
+    state.dashboard.selection.clear();
+    setFormMessage('#dashboard-bulk-message', `${moved}.`);
+  });
+  renderDashboard();
 }
 
 /** A stable, order-independent hash of a placeId, used to pick a deterministic sample within a bucket. */
@@ -130,38 +440,64 @@ function spatialSample(places, limit, bounds) {
   return selected;
 }
 
-/** Caps the markers drawn on the map at MAX_VISIBLE_MARKERS, sampling each statut bucket separately so a scan of a dense zone doesn't drown out other statuts, and always keeping `selectedId`'s marker visible. */
+/**
+ * Caps the markers drawn on the map at MAX_VISIBLE_MARKERS, filling the statut buckets in
+ * STATUS_ORDER and sampling each one spatially so a dense zone doesn't crowd out sparser areas.
+ * `selectedId`'s établissement — the one whose détail card is open — holds a slot of its own,
+ * taken before any bucket, so it stays drawn whatever its statut.
+ */
 export function chooseVisibleMarkers(places, bounds, selectedId = null) {
   if (places.length <= MAX_VISIBLE_MARKERS || !bounds) return places;
-  let remaining = MAX_VISIBLE_MARKERS;
-  let result = [];
+  const selected = places.find((place) => place.placeId === selectedId);
+  let remaining = MAX_VISIBLE_MARKERS - (selected ? 1 : 0);
+  let result = selected ? [selected] : [];
   for (const status of STATUS_ORDER) {
     if (!remaining) break;
-    const group = places.filter((place) => place.status === status);
-    const selected = group.find((place) => place.placeId === selectedId);
+    const group = places.filter((place) => place.status === status && place !== selected);
     const sample = spatialSample(group, remaining, bounds);
-    if (selected && !sample.some((place) => place.placeId === selected.placeId)) {
-      sample.pop();
-      sample.unshift(selected);
-    }
     result = result.concat(sample);
     remaining -= sample.length;
   }
   return result;
 }
 
-function renderMarkers() {
+/** Whether `place` has coordinates inside `bounds` (edges included, antimeridian-straddling frames too). */
+function inBounds(place, bounds) {
+  if (place.lat == null || place.lng == null) return false;
+  const ne = bounds.getNorthEast();
+  const sw = bounds.getSouthWest();
+  if (place.lat < sw.lat() || place.lat > ne.lat()) return false;
+  return sw.lng() <= ne.lng() ? place.lng >= sw.lng() && place.lng <= ne.lng() : place.lng >= sw.lng() || place.lng <= ne.lng();
+}
+
+/**
+ * The établissements the map view draws for the frame `bounds`: `inFrame` is every one inside
+ * it, `shown` the capped subset that gets a marker — and, the same set, a row in the sidebar
+ * list, the open établissement (`selectedId`) first. No frame yet (the map isn't loaded) means
+ * nothing is drawn.
+ */
+export function placesOnMap(places, bounds, selectedId = null) {
+  if (!bounds) return { inFrame: [], shown: [] };
+  const inFrame = places.filter((place) => inBounds(place, bounds));
+  const shown = chooseVisibleMarkers(inFrame, bounds, selectedId);
+  return { inFrame, shown: openFirst(shown, selectedId) };
+}
+
+/** `places` with the open établissement (`selectedId`), if among them, moved to the front. */
+function openFirst(places, selectedId) {
+  const open = places.find((place) => place.placeId === selectedId);
+  return open ? [open, ...places.filter((place) => place !== open)] : places;
+}
+
+/** Redraws the markers and the sidebar list for the current frame — a local redraw, no Supabase or Google request. */
+function renderMapPlaces() {
+  const { inFrame, shown } = placesOnMap(state.places, state.map?.getBounds(), state.selectedId);
+  renderSidebarList(shown);
   if (!state.map || !window.google) return;
   state.markers.forEach((marker) => marker.setMap(null));
   state.markers.clear();
-  const bounds = state.map.getBounds();
-  const inFrame = bounds
-    ? state.places.filter((place) => place.lat != null && place.lng != null && bounds.contains({ lat: place.lat, lng: place.lng }))
-    : state.places.filter((place) => place.lat != null && place.lng != null);
-  const displayed = chooseVisibleMarkers(inFrame, bounds, state.selectedId);
-  const countEl = $('#map-count');
-  if (countEl) countEl.textContent = inFrame.length ? `${displayed.length} affiché${displayed.length > 1 ? 's' : ''} sur ${inFrame.length} dans la zone` : '';
-  displayed.forEach((place) => {
+  $('#map-count').textContent = inFrame.length ? `${shown.length} affiché${shown.length > 1 ? 's' : ''} sur ${inFrame.length} dans la zone` : '';
+  shown.forEach((place) => {
     const marker = new google.maps.Marker({
       position: { lat: place.lat, lng: place.lng },
       map: state.map,
@@ -177,7 +513,7 @@ function selectPlace(placeId, pan = false) {
   const place = state.places.find((item) => item.placeId === placeId);
   if (!place) return;
   state.selectedId = placeId;
-  renderMarkers();
+  renderMapPlaces();
   if (pan && state.map && place.lat != null && place.lng != null) {
     state.map.panTo({ lat: place.lat, lng: place.lng });
     state.map.setZoom(Math.max(state.map.getZoom(), 16));
@@ -185,12 +521,13 @@ function selectPlace(placeId, pan = false) {
   renderDetail(place);
 }
 
-/** Replaces `updated` in state.places, and re-renders whatever's currently showing it. */
-function applyPlaceUpdate(updated) {
-  state.places = state.places.map((place) => (place.id === updated.id ? updated : place));
-  renderPlaceList();
-  renderMarkers();
-  if (state.selectedId === updated.placeId) renderDetail(updated);
+/** Replaces each of `updated` in state.places, and re-renders whatever's currently showing them, once. */
+function applyPlaceUpdates(updated) {
+  const byId = new Map(updated.map((place) => [place.id, place]));
+  state.places = state.places.map((place) => byId.get(place.id) ?? place);
+  renderPlaces();
+  const inDetail = state.places.find((place) => place.placeId === state.selectedId);
+  if (inDetail && byId.has(inDetail.id)) renderDetail(inDetail);
 }
 
 async function onStatusChange(place, status) {
@@ -201,7 +538,7 @@ async function onStatusChange(place, status) {
     if (!window.confirm(`Remettre « ${place.name} » au statut « À visiter » ?${warning}`)) return;
   }
   try {
-    applyPlaceUpdate(await store.setStatus(place.id, status));
+    applyPlaceUpdates([await store.setStatus(place.id, status)]);
   } catch (error) {
     console.error(error);
     window.alert('Impossible de mettre à jour le statut. Réessaie dans un instant.');
@@ -217,7 +554,7 @@ async function onEditSaleAmount(place) {
     return;
   }
   try {
-    applyPlaceUpdate(await store.setSaleAmount(place.id, amount));
+    applyPlaceUpdates([await store.setSaleAmount(place.id, amount)]);
   } catch (error) {
     console.error(error);
     window.alert('Impossible de mettre à jour le montant de la vente. Réessaie dans un instant.');
@@ -235,12 +572,12 @@ function renderDetail(place) {
     (status) =>
       `<button data-status="${status}" type="button" class="${place.status === status ? 'selected-' + status : ''}">${STATUS_LABELS[status]}</button>`
   ).join('');
-  card.innerHTML = `<button class="close-detail" type="button" aria-label="Fermer">×</button><h2>${escapeHtml(place.name)}</h2><p>${escapeHtml(place.address)}</p><div class="place-type">${escapeHtml(placeType(place).replaceAll('_', ' '))}</div>${saleBlock}<div class="status-select">${statusButtons}</div><div class="link-actions"><button data-action="copy" type="button">Copier le lien NFC</button><button data-action="open" type="button">Ouvrir la fiche Google</button></div><code class="place-id">Place ID : ${escapeHtml(place.placeId)}</code>`;
+  card.innerHTML = `<button class="close-detail" type="button" aria-label="Fermer">×</button><h2>${escapeHtml(place.name)}</h2><p>${escapeHtml(place.address)}</p><div class="place-type">${escapeHtml(placeTypeLabel(place))}</div>${saleBlock}<div class="status-select">${statusButtons}</div><div class="link-actions"><button data-action="copy" type="button">Copier le lien NFC</button><button data-action="open" type="button">Ouvrir la fiche Google</button></div><code class="place-id">Place ID : ${escapeHtml(place.placeId)}</code>`;
 
   card.querySelector('.close-detail').onclick = () => {
     state.selectedId = null;
     card.classList.add('hidden');
-    renderMarkers();
+    renderMapPlaces();
   };
   card.querySelectorAll('[data-status]').forEach((button) => {
     button.onclick = () => onStatusChange(place, button.dataset.status);
@@ -300,8 +637,7 @@ async function addResult(candidate, button) {
       types: candidate.types || [],
     });
     if (!state.places.some((tracked) => tracked.placeId === place.placeId)) state.places = [place, ...state.places];
-    renderPlaceList();
-    renderMarkers();
+    renderPlaces();
     selectPlace(place.placeId, true);
     button.textContent = '✓';
     button.title = 'Déjà suivi';
@@ -455,6 +791,29 @@ export async function runZoneScan({ cells, store, searchCell, onCellStart, onPla
   return { added, cellsProcessed, cellsTotal: cells.length, quotaExhausted };
 }
 
+/**
+ * Moves the établissements `places` to `status` (one of BULK_STATUSES — never vendu) with one
+ * `store.setStatus` call each, in order: the store's single-établissement write path, so the
+ * Backlog trail is the one the same changes made one at a time would leave. No transaction —
+ * on the first failure it stops, and the report says how many were `changed` before it and
+ * which établissement `failed`, with the `error`. An établissement already at `status` is
+ * skipped, and `setStatus` itself is a no-op on one that got there since, so a retry over
+ * the same selection never applies a statut twice. `updated` holds the établissements as
+ * changed, for the caller to redraw.
+ */
+export async function runBulkStatusChange({ places, status, store }) {
+  const moving = bulkMoves(places, status);
+  const updated = [];
+  for (const place of moving) {
+    try {
+      updated.push(await store.setStatus(place.id, status));
+    } catch (error) {
+      return { changed: updated.length, total: moving.length, updated, failed: place, error };
+    }
+  }
+  return { changed: updated.length, total: moving.length, updated, failed: null, error: null };
+}
+
 /** "3 nouvelles fiches ajoutées" / "1 nouvelle fiche ajoutée" / "aucune nouvelle fiche" — French plural agreement for the scan's running add count. */
 function addedFichesLabel(count) {
   if (!count) return 'aucune nouvelle fiche';
@@ -488,8 +847,7 @@ async function onScanZone() {
         onPlaceAdded: (place) => {
           addedSoFar += 1;
           state.places = [place, ...state.places];
-          renderPlaceList();
-          renderMarkers();
+          renderPlaces();
         },
       });
 
@@ -518,6 +876,12 @@ function loadGoogleMapsScript(apiKey) {
   });
 }
 
+/** No map this session, so no markers and no sidebar list: says so where the list would be. */
+function showMapUnavailable() {
+  state.mapUnavailable = true;
+  renderSidebarList([]);
+}
+
 async function initMap(googleMapsApiKey) {
   const placeholderText = $('#map-placeholder-text');
 
@@ -529,6 +893,7 @@ async function initMap(googleMapsApiKey) {
         ? `${QUOTA_MESSAGE} La carte sera disponible le mois prochain.`
         : 'Impossible de vérifier le quota Google. Réessaie plus tard.';
     if (!(error instanceof QuotaExceededError)) console.error(error);
+    showMapUnavailable();
     return;
   }
 
@@ -537,6 +902,7 @@ async function initMap(googleMapsApiKey) {
   } catch (error) {
     console.error(error);
     placeholderText.textContent = 'La carte ne se charge pas. Réessaie plus tard.';
+    showMapUnavailable();
     return;
   }
 
@@ -549,7 +915,10 @@ async function initMap(googleMapsApiKey) {
     mapTypeControl: false,
     fullscreenControl: false,
   });
-  renderMarkers();
+  // The markers and the sidebar list depend on the frame, so redraw once the map settles after
+  // any pan or zoom — including the pan to an établissement picked from the list or the Tableau de bord.
+  state.map.addListener('idle', renderMapPlaces);
+  renderMapPlaces();
 }
 
 async function start() {
@@ -557,25 +926,84 @@ async function start() {
   const config = readConfig(window);
   if (!store || !config) return;
 
-  if (!config.googleMapsApiKey) {
+  document.querySelectorAll('.view-switch [data-view]').forEach((button) => {
+    button.addEventListener('click', () => showView(button.dataset.view));
+  });
+  $('#dashboard-size').addEventListener('change', (event) => {
+    state.dashboard.pageSize = Number(event.target.value);
+    state.dashboard.page = 1;
+    renderDashboard();
+  });
+  /** Applies a filter or sort change to the Tableau de bord and redraws it from its first page. */
+  const redrawDashboardFromFirstPage = ({ filters = {}, sort = {} }) => {
+    state.dashboard.filters = { ...state.dashboard.filters, ...filters };
+    state.dashboard.sort = { ...state.dashboard.sort, ...sort };
+    state.dashboard.page = 1;
+    // A filter change can prune the selection a bulk message was about.
+    setFormMessage('#dashboard-bulk-message', '');
+    renderDashboard();
+  };
+  ['city', 'type', 'status'].forEach((filter) => {
+    $(`#dashboard-${filter}`).addEventListener('change', (event) => redrawDashboardFromFirstPage({ filters: { [filter]: event.target.value || null } }));
+  });
+  $('#dashboard-filters-reset').addEventListener('click', () => {
+    // Resets the filters only: the sort, the page size and the selection are kept.
+    redrawDashboardFromFirstPage({ filters: NO_FILTERS });
+    // The link just hid itself with no filter left set; keep keyboard focus on the filters.
+    $('#dashboard-city').focus();
+  });
+  $('#dashboard-select-all').addEventListener('change', (event) => {
+    // Ticks the whole filtered set, rows on other pages included — not just this page.
+    state.dashboard.selection = event.target.checked ? filteredPlaceIds(state.places, state.dashboard.filters) : new Set();
+    setFormMessage('#dashboard-bulk-message', '');
+    renderDashboard();
+  });
+  $('#dashboard-selection-clear').addEventListener('click', () => {
+    state.dashboard.selection.clear();
+    setFormMessage('#dashboard-bulk-message', '');
+    renderDashboard();
+    // The button just hid itself with the action bar; keep keyboard focus on the table.
+    $('#dashboard-select-all').focus();
+  });
+  $('#dashboard-bulk-status').innerHTML = BULK_STATUSES.map((status) => `<option value="${status}">${STATUS_LABELS[status]}</option>`).join('');
+  $('#dashboard-bulk-apply').addEventListener('click', onBulkStatusChange);
+  $('#dashboard-print').addEventListener('click', () => window.print());
+  // The printed Tableau de bord replaces the page only while it is the view on screen; printing
+  // the map view prints the page as it is.
+  window.addEventListener('beforeprint', () => {
+    const printing = state.view === 'dashboard';
+    if (printing) renderDashboardPrint();
+    document.body.classList.toggle('printing-dashboard', printing);
+  });
+  window.addEventListener('afterprint', () => document.body.classList.remove('printing-dashboard'));
+  $('#dashboard-sort').addEventListener('change', (event) => redrawDashboardFromFirstPage({ sort: { key: event.target.value } }));
+  $('#dashboard-sort-direction').addEventListener('click', () =>
+    redrawDashboardFromFirstPage({ sort: { direction: SORT_DIRECTIONS[state.dashboard.sort.direction].next } })
+  );
+
+  // Without a key only the map stops: the Tableau de bord still lists the établissements below.
+  if (config.googleMapsApiKey) {
+    $('#search-form').addEventListener('submit', onSearchSubmit);
+    $('#city-form').addEventListener('submit', onCenterSubmit);
+    $('#scan-button').addEventListener('click', onScanZone);
+  } else {
     $('#map-placeholder-text').textContent = 'Clé Google Maps manquante pour ce déploiement.';
     $('#search-button').disabled = true;
     $('#center-button').disabled = true;
     $('#scan-button').disabled = true;
-    return;
+    showMapUnavailable();
   }
 
-  $('#search-form').addEventListener('submit', onSearchSubmit);
-  $('#city-form').addEventListener('submit', onCenterSubmit);
-  $('#scan-button').addEventListener('click', onScanZone);
+  [state.places] = await Promise.all([
+    store.listPlaces().catch((error) => {
+      console.error(error);
+      return [];
+    }),
+    loadSalePrice(),
+  ]);
+  renderPlaces();
 
-  state.places = await store.listPlaces().catch((error) => {
-    console.error(error);
-    return [];
-  });
-  renderPlaceList();
-
-  await initMap(config.googleMapsApiKey);
+  if (config.googleMapsApiKey) await initMap(config.googleMapsApiKey);
 }
 
 if (typeof document !== 'undefined') start();

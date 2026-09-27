@@ -1,4 +1,5 @@
 import { bootstrapStore } from './bootstrap.js';
+import { renderPageStrip } from './page-strip.js';
 
 /**
  * The Backlog page: a paginated, most-recent-first view of the account's activity_log,
@@ -41,31 +42,13 @@ async function loadQuota() {
 
 function renderPagination() {
   const { total, page, pageSize } = state;
-  const totalPages = Math.max(1, Math.ceil(total / pageSize));
-  const pagination = $('#backlog-pagination');
-  pagination.classList.toggle('hidden', totalPages <= 1);
-  if (totalPages <= 1) return;
-
-  const pages = new Set([1, totalPages, page - 1, page, page + 1]);
-  const buttons = [];
-  [...pages]
-    .filter((value) => value >= 1 && value <= totalPages)
-    .sort((a, b) => a - b)
-    .forEach((value, index, array) => {
-      if (index && value - array[index - 1] > 1) buttons.push('<span>…</span>');
-      buttons.push(`<button data-backlog-page="${value}" class="${value === page ? 'active' : ''}" type="button">${value}</button>`);
-    });
-
-  pagination.innerHTML =
-    `<button data-backlog-page="${page - 1}" type="button" ${page === 1 ? 'disabled' : ''}>Précédent</button>` +
-    buttons.join('') +
-    `<button data-backlog-page="${page + 1}" type="button" ${page === totalPages ? 'disabled' : ''}>Suivant</button>`;
-
-  pagination.querySelectorAll('[data-backlog-page]').forEach((button) => {
-    button.onclick = () => {
-      state.page = Number(button.dataset.backlogPage);
+  renderPageStrip($('#backlog-pagination'), {
+    page,
+    totalPages: Math.max(1, Math.ceil(total / pageSize)),
+    onSelect: (selected) => {
+      state.page = selected;
       loadBacklog();
-    };
+    },
   });
 }
 
