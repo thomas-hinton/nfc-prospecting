@@ -981,18 +981,18 @@ async function start() {
     redrawDashboardFromFirstPage({ sort: { direction: SORT_DIRECTIONS[state.dashboard.sort.direction].next } })
   );
 
-  if (!config.googleMapsApiKey) {
+  // Without a key only the map stops: the Tableau de bord still lists the établissements below.
+  if (config.googleMapsApiKey) {
+    $('#search-form').addEventListener('submit', onSearchSubmit);
+    $('#city-form').addEventListener('submit', onCenterSubmit);
+    $('#scan-button').addEventListener('click', onScanZone);
+  } else {
     $('#map-placeholder-text').textContent = 'Clé Google Maps manquante pour ce déploiement.';
     $('#search-button').disabled = true;
     $('#center-button').disabled = true;
     $('#scan-button').disabled = true;
     showMapUnavailable();
-    return;
   }
-
-  $('#search-form').addEventListener('submit', onSearchSubmit);
-  $('#city-form').addEventListener('submit', onCenterSubmit);
-  $('#scan-button').addEventListener('click', onScanZone);
 
   [state.places] = await Promise.all([
     store.listPlaces().catch((error) => {
@@ -1003,7 +1003,7 @@ async function start() {
   ]);
   renderPlaces();
 
-  await initMap(config.googleMapsApiKey);
+  if (config.googleMapsApiKey) await initMap(config.googleMapsApiKey);
 }
 
 if (typeof document !== 'undefined') start();
