@@ -675,6 +675,87 @@ describe('listActivityLog', () => {
   });
 });
 
+describe('listPlaceHistory', () => {
+  function activityRow(overrides = {}) {
+    return {
+      id: `log-${Math.random()}`,
+      user_id: account.id,
+      action: 'place_added',
+      place_name: 'Boulangerie du Port',
+      address: '12 quai du Port',
+      details: null,
+      place_ref: 'place-a',
+      at: new Date().toISOString(),
+      ...overrides,
+    };
+  }
+
+  it('lists the entries linked to the établissement, most recent first', async () => {
+    const { store, client } = setup();
+    await store.signIn(account.email, account.password);
+    client.state.tables.activity_log.push(
+      activityRow({ id: 'added', action: 'place_added', at: '2026-01-01T00:00:00.000Z' }),
+      activityRow({ id: 'visit', action: 'visit_recorded', details: 'Résultat : À visiter. Commentaire : fermé', at: '2026-01-03T00:00:00.000Z' }),
+      activityRow({ id: 'scheduled', action: 'status_changed', at: '2026-01-02T00:00:00.000Z' })
+    );
+
+    const entries = await store.listPlaceHistory('place-a');
+
+    expect(entries.map((entry) => entry.id)).toEqual(['visit', 'scheduled', 'added']);
+    expect(entries[0]).toMatchObject({ action: 'visit_recorded', details: 'Résultat : À visiter. Commentaire : fermé', placeRef: 'place-a' });
+  });
+
+  it('keeps both entries a visite writes, visit then statut', async () => {
+    const { store } = setup();
+    await store.signIn(account.email, account.password);
+    const { place } = await store.upsertPlace({ placeId: 'g-1', name: 'Boulangerie du Port', address: '12 quai du Port' });
+    await store.setStatus(place.id, 'scheduled');
+    await store.recordVisit(place.id, 'to_visit', { comment: 'Fermé.' });
+
+    const actions = (await store.listPlaceHistory(place.id)).map((entry) => entry.action);
+
+    expect(actions).toHaveLength(4);
+    expect(actions.filter((action) => action === 'visit_recorded')).toHaveLength(1);
+    expect(actions.filter((action) => action === 'status_changed')).toHaveLength(2);
+  });
+
+  it('excludes entries of other établissements and unlinked entries', async () => {
+    const { store, client } = setup();
+    await store.signIn(account.email, account.password);
+    client.state.tables.activity_log.push(
+      activityRow({ id: 'mine' }),
+      activityRow({ id: 'other', place_ref: 'place-b' }),
+      activityRow({ id: 'unlinked', place_ref: null })
+    );
+
+    expect((await store.listPlaceHistory('place-a')).map((entry) => entry.id)).toEqual(['mine']);
+  });
+
+  it('excludes Google API requests, even one linked to the établissement', async () => {
+    const { store, client } = setup();
+    await store.signIn(account.email, account.password);
+    client.state.tables.activity_log.push(
+      activityRow({ id: 'added', action: 'Fiche ajoutée' }),
+      activityRow({ id: 'request', action: 'Requête Google - Places API' })
+    );
+
+    expect((await store.listPlaceHistory('place-a')).map((entry) => entry.id)).toEqual(['added']);
+  });
+
+  it('never lists activity belonging to another account', async () => {
+    const { store, client } = setup();
+    client.state.tables.activity_log.push(activityRow({ user_id: 'someone-else' }));
+    await store.signIn(account.email, account.password);
+
+    expect(await store.listPlaceHistory('place-a')).toEqual([]);
+  });
+
+  it('fails loudly when reading a history while signed out', async () => {
+    const { store } = setup();
+    await expect(store.listPlaceHistory('place-a')).rejects.toThrow(/authentification/i);
+  });
+});
+
 describe('getQuotaUsage', () => {
   function currentMonth() {
     const now = new Date();

@@ -1,6 +1,7 @@
 import { bootstrapStore } from './bootstrap.js';
 import { STATUS_LABELS, euros } from './store.js';
 import { mapsUrl } from './place-fields.js';
+import { openPlaceHistory } from './place-history.js';
 
 /**
  * The Visite page: the établissements programmé pour visite, oldest programmation first,
@@ -120,7 +121,7 @@ function renderEditor() {
     (status) =>
       `<button class="${status} ${state.pendingStatus === status ? 'active' : ''}" data-visit-status="${status}" type="button">${STATUS_LABELS[status]}</button>`
   ).join('');
-  editor.innerHTML = `<button id="visit-close" class="visit-close" type="button" aria-label="Fermer">×</button><p class="eyebrow">VISITE PROGRAMMÉE</p><h2>${escapeHtml(place.name)}</h2><p class="visit-address">${escapeHtml(place.address)}</p><button id="visit-open-google" class="visit-open-google" type="button">Ouvrir la fiche Google</button><div class="visit-status-options">${outcomeButtons}</div><div class="visit-fields ${state.pendingStatus ?? ''}">${outcomeFields(state.pendingStatus)}</div><p id="visit-error" class="visit-error hidden" role="alert"></p><button id="visit-save" class="primary visit-save" type="button">Enregistrer la visite</button>`;
+  editor.innerHTML = `<button id="visit-close" class="visit-close" type="button" aria-label="Fermer">×</button><p class="eyebrow">VISITE PROGRAMMÉE</p><h2>${escapeHtml(place.name)}</h2><p class="visit-address">${escapeHtml(place.address)}</p><div class="visit-links"><button id="visit-open-google" type="button">Ouvrir la fiche Google</button><button id="visit-history" type="button">Historique</button></div><div class="visit-status-options">${outcomeButtons}</div><div class="visit-fields ${state.pendingStatus ?? ''}">${outcomeFields(state.pendingStatus)}</div><p id="visit-error" class="visit-error hidden" role="alert"></p><button id="visit-save" class="primary visit-save" type="button">Enregistrer la visite</button>`;
   editor.classList.remove('hidden');
 
   $('#visit-close').onclick = () => {
@@ -128,6 +129,7 @@ function renderEditor() {
     renderVisits();
   };
   $('#visit-open-google').onclick = () => window.open(mapsUrl(place), '_blank', 'noopener');
+  $('#visit-history').onclick = () => openPlaceHistory(store, place);
   document.querySelectorAll('[data-visit-status]').forEach((button) => {
     button.onclick = () => {
       state.pendingStatus = button.dataset.visitStatus;

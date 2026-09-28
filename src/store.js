@@ -53,6 +53,13 @@ function mapPlaceRow(row) {
   };
 }
 
+/**
+ * Whether an activity_log action records a Google API request — technical Backlog entries,
+ * never part of an établissement's own history. Only the local desktop app wrote them (as
+ * `Requête Google - <API>`, migrated by #11); the store itself logs none.
+ */
+const isApiRequest = (action) => String(action ?? '').startsWith('Requête Google');
+
 /** Converts an `activity_log` row (snake_case, as stored) to the shape callers use. */
 function mapActivityLogRow(row) {
   return {
@@ -375,6 +382,25 @@ export function createStore({ client }) {
         .range(from, to);
       if (error) throwStoreError(error, 'Impossible de lire le journal.');
       return { entries: (data ?? []).map(mapActivityLogRow), total: count ?? 0, page, pageSize };
+    },
+
+    /**
+     * The Historique d'un établissement: every activity_log entry linked to it, most recent
+     * first, unpaginated. Google API requests are left out — they belong to the Backlog only.
+     *
+     * @param {string} id - The établissement's database id (place.id).
+     * @returns {Promise<object[]>}
+     */
+    async listPlaceHistory(id) {
+      const userId = await currentUserId();
+      const { data, error } = await client
+        .from('activity_log')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('place_ref', id)
+        .order('at', { ascending: false });
+      if (error) throwStoreError(error, "Impossible de lire l'historique.");
+      return (data ?? []).filter((row) => !isApiRequest(row.action)).map(mapActivityLogRow);
     },
 
     /**

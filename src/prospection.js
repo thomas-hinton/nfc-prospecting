@@ -2,6 +2,7 @@ import { bootstrapStore } from './bootstrap.js';
 import { readConfig } from './supabase-client.js';
 import { STATUS_LABELS, euros } from './store.js';
 import { mapsUrl, placeTypeLabel } from './place-fields.js';
+import { openPlaceHistory } from './place-history.js';
 import {
   BULK_STATUSES,
   bulkImpact,
@@ -567,7 +568,7 @@ function renderDetail(place) {
     (status) =>
       `<button data-status="${status}" type="button" class="${place.status === status ? 'selected-' + status : ''}">${STATUS_LABELS[status]}</button>`
   ).join('');
-  card.innerHTML = `<button class="close-detail" type="button" aria-label="Fermer">×</button><h2>${escapeHtml(place.name)}</h2><p>${escapeHtml(place.address)}</p><div class="place-type">${escapeHtml(placeTypeLabel(place))}</div>${saleBlock}<div class="status-select">${statusButtons}</div><div class="link-actions"><button data-action="copy" type="button">Copier le lien NFC</button><button data-action="open" type="button">Ouvrir la fiche Google</button></div><code class="place-id">Place ID : ${escapeHtml(place.placeId)}</code>`;
+  card.innerHTML = `<button class="close-detail" type="button" aria-label="Fermer">×</button><h2>${escapeHtml(place.name)}</h2><p>${escapeHtml(place.address)}</p><div class="place-type">${escapeHtml(placeTypeLabel(place))}</div>${saleBlock}<div class="status-select">${statusButtons}</div><div class="link-actions"><button data-action="copy" type="button">Copier le lien NFC</button><button data-action="open" type="button">Ouvrir la fiche Google</button><button data-action="history" type="button">Historique</button></div><code class="place-id">Place ID : ${escapeHtml(place.placeId)}</code>`;
 
   card.querySelector('.close-detail').onclick = () => {
     state.selectedId = null;
@@ -587,6 +588,7 @@ function renderDetail(place) {
     }
   };
   card.querySelector('[data-action="open"]').onclick = () => window.open(mapsUrl(place), '_blank', 'noopener');
+  card.querySelector('[data-action="history"]').onclick = () => openPlaceHistory(store, place);
 }
 
 function renderResults(results) {
