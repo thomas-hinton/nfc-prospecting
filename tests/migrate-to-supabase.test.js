@@ -17,9 +17,8 @@ import {
 
 const account = { email: 'prospecteur@example.com', password: 'correct-horse', id: 'user-1' };
 
-/** The fake's table map lacks visit_history by default; the store never wrote to it. */
 async function setup() {
-  const client = createFakeSupabase({ account, tables: { visit_history: [] } });
+  const client = createFakeSupabase({ account });
   await client.auth.signInWithPassword({ email: account.email, password: account.password });
   return client;
 }

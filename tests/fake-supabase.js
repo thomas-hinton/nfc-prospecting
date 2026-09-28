@@ -1,14 +1,17 @@
 let nextRowId = 1;
 const uid = (prefix) => `${prefix}-${nextRowId++}`;
 
-/** Column defaults per table, mirroring supabase/migrations/20260902000000_foundation.sql plus 20260909000000_place_city.sql. */
+/** Column defaults per table, mirroring supabase/migrations/20260902000000_foundation.sql plus the later migrations (place city, activity_log place_ref). */
 function rowDefaults(table) {
   const now = new Date().toISOString();
   if (table === 'places') {
     return { status: 'to_visit', sale_amount: null, city: null, created_at: now, status_changed_at: now, updated_at: now };
   }
   if (table === 'activity_log') {
-    return { place_name: '', address: '', details: null, at: now };
+    return { place_name: '', address: '', details: null, place_ref: null, at: now };
+  }
+  if (table === 'visit_history') {
+    return { comment: '', sale_amount: null, changed_at: now };
   }
   return {};
 }
@@ -50,6 +53,8 @@ function createTableQuery(table, state) {
   async function execute() {
     const authError = requireAuth();
     if (authError) return { data: null, error: authError };
+    const failure = state.failures.find((f) => f.table === table && f.op === op.type);
+    if (failure) return { data: null, error: { message: failure.message } };
 
     if (op.type === 'select') {
       const filtered = applyFilters(rows());
@@ -149,7 +154,9 @@ export function createFakeSupabase({ account = null, monthlyLimit = 1000, quota 
     session: null,
     monthlyLimit,
     quota: { places: 0, maps: 0, ...quota },
-    tables: { places: [], activity_log: [], quota: [], settings: [], ...tables },
+    /** Writes made to fail, as `{ table, op, message }` — how tests simulate a network or Supabase error midway. */
+    failures: [],
+    tables: { places: [], visit_history: [], activity_log: [], quota: [], settings: [], ...tables },
   };
 
   function emit(event) {

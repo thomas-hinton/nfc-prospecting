@@ -1,7 +1,7 @@
 /**
- * The two fields an établissement carries beyond what Google hands back verbatim: its
- * commune and its type. Both are derived here and nowhere else — the store, the Tableau
- * de bord and the backfill script all import these, so the rule has one implementation.
+ * What an établissement carries beyond what Google hands back verbatim: its commune, its
+ * type and its Google Maps link. Each is derived here and nowhere else — the store, the
+ * pages and the backfill script all import these, so each rule has one implementation.
  *
  * Pure and dependency-free on purpose: no Google call, no Supabase client, no DOM.
  */
@@ -56,4 +56,10 @@ export function placeType(place) {
 /** The établissement's type as displayed: Google's `real_estate_agency` reads "real estate agency". */
 export function placeTypeLabel(place) {
   return placeType(place).replaceAll('_', ' ');
+}
+
+/** The établissement's Google Maps link: what « Ouvrir la fiche Google » opens and what gets encoded onto the NFC card. */
+export function mapsUrl(place) {
+  const query = encodeURIComponent(`${place.name} ${place.address}`.trim());
+  return `https://www.google.com/maps/search/?api=1&query_place_id=${encodeURIComponent(place.placeId)}&query=${query}`;
 }

@@ -2,9 +2,8 @@
  * The store: the only module that talks to Supabase.
  *
  * It takes an already-built client so tests can drive the same public interface against
- * an in-memory fake (see tests/fake-supabase.js). This foundation slice covers session
- * management and the quota RPC; feature tickets extend it with établissement, visite,
- * activity-log and settings methods.
+ * an in-memory fake (see tests/fake-supabase.js). It covers session management, the quota
+ * RPC, établissements and their statut, visites, settings and the activity log.
  */
 import { placeCity } from './place-fields.js';
 
@@ -19,6 +18,9 @@ export const STATUS_LABELS = {
   refused: 'Refusé',
   non_compliant: 'Non conforme',
 };
+
+/** The outcomes a visite can resolve a programmé établissement to (see recordVisit). */
+const VISIT_OUTCOMES = new Set(['sold', 'refused', 'non_compliant', 'to_visit']);
 
 function throwStoreError(error, fallback) {
   throw new Error(error?.message || fallback);
@@ -56,6 +58,7 @@ function mapActivityLogRow(row) {
     placeName: row.place_name,
     address: row.address,
     details: row.details ?? null,
+    placeRef: row.place_ref ?? null,
     at: row.at,
   };
 }
@@ -83,6 +86,47 @@ export function createStore({ client }) {
     if (error) throwStoreError(error, "Impossible de lire l'établissement.");
     if (!data) throw new Error('Établissement introuvable.');
     return data;
+  }
+
+  /** Appends one activity_log entry about the établissement `row` (a raw `places` row), linked to it by `place_ref`. */
+  async function logActivity(userId, action, row, details) {
+    const { error } = await client.from('activity_log').insert({
+      user_id: userId,
+      action,
+      place_ref: row.id,
+      place_name: row.name,
+      address: row.address,
+      details,
+    });
+    if (error) throwStoreError(error, "Impossible d'enregistrer l'historique.");
+  }
+
+  /**
+   * Moves the établissement `current` (a raw `places` row) to `status` and logs the
+   * transition — the write path setStatus and recordVisit share. See setStatus.
+   */
+  async function changeStatus(userId, current, status, saleAmount) {
+    const previousStatus = current.status;
+    if (previousStatus === status) return mapPlaceRow(current);
+
+    const nextSaleAmount =
+      status === 'sold' ? Math.round((saleAmount != null ? saleAmount : await readSalePrice(userId)) * 100) / 100 : null;
+    const now = new Date().toISOString();
+
+    const { data: updated, error } = await client
+      .from('places')
+      .update({ status, sale_amount: nextSaleAmount, status_changed_at: now, updated_at: now })
+      .eq('user_id', userId)
+      .eq('id', current.id)
+      .select();
+    if (error) throwStoreError(error, 'Impossible de mettre à jour le statut.');
+    const row = (Array.isArray(updated) ? updated[0] : updated) ?? { ...current, status, sale_amount: nextSaleAmount };
+
+    let details = `Statut : ${STATUS_LABELS[previousStatus]} → ${STATUS_LABELS[status]}.`;
+    if (status === 'sold') details += ` Montant de vente : ${euros(nextSaleAmount)}.`;
+    await logActivity(userId, 'status_changed', row, details);
+
+    return mapPlaceRow(row);
   }
 
   async function readSalePrice(userId) {
@@ -182,14 +226,7 @@ export function createStore({ client }) {
 
       if (inserted && inserted.length) {
         const row = inserted[0];
-        const { error: logError } = await client.from('activity_log').insert({
-          user_id: userId,
-          action: 'place_added',
-          place_name: row.name,
-          address: row.address,
-          details: 'Statut initial : à visiter.',
-        });
-        if (logError) throwStoreError(logError, "Impossible d'enregistrer l'historique.");
+        await logActivity(userId, 'place_added', row, 'Statut initial : à visiter.');
         return { place: mapPlaceRow(row), created: true };
       }
 
@@ -221,35 +258,54 @@ export function createStore({ client }) {
     async setStatus(id, status, { saleAmount } = {}) {
       if (!STATUS_LABELS[status]) throw new Error(`Statut inconnu : ${status}`);
       const userId = await currentUserId();
+      return changeStatus(userId, await findPlaceRow(userId, id), status, saleAmount);
+    },
+
+    /**
+     * Records the outcome of a field visite on an établissement programmé pour visite:
+     * vendu, refusé, non conforme, or à visiter (back to the pool, to be reprogrammed).
+     *
+     * Appends exactly one visit_history entry and one `visit_recorded` activity_log entry —
+     * even without a comment, so a visite made on site stays distinguishable from a statut
+     * changed by hand — then moves the statut through the same write path as setStatus.
+     * The statut change comes last on purpose: if a write fails midway the établissement is
+     * still programmé, stays on the Visite list, and the save can simply be retried (at the
+     * cost of a rare duplicate visite entry).
+     *
+     * A vendu requires an explicit, valid `saleAmount` (0 allowed); there is no fallback
+     * to the configured sale price here, the Visite page pre-fills it instead.
+     *
+     * @param {string} id - The établissement's database id (place.id).
+     * @param {'sold'|'refused'|'non_compliant'|'to_visit'} status
+     * @param {{ comment?: string, saleAmount?: number }} [options]
+     * @returns {Promise<object>}
+     */
+    async recordVisit(id, status, { comment = '', saleAmount } = {}) {
+      if (!VISIT_OUTCOMES.has(status)) throw new Error(`Résultat de visite inconnu : ${status}`);
+      if (status === 'sold' && !(Number.isFinite(saleAmount) && saleAmount >= 0)) throw new Error('Montant de vente invalide.');
+      const userId = await currentUserId();
       const current = await findPlaceRow(userId, id);
-      const previousStatus = current.status;
-      if (previousStatus === status) return mapPlaceRow(current);
+      if (current.status !== 'scheduled') throw new Error("Cet établissement n'est pas programmé pour visite.");
 
-      const nextSaleAmount =
-        status === 'sold' ? Math.round((saleAmount != null ? saleAmount : await readSalePrice(userId)) * 100) / 100 : null;
-      const now = new Date().toISOString();
+      comment = String(comment ?? '').trim();
+      const visitSaleAmount = status === 'sold' ? Math.round(saleAmount * 100) / 100 : null;
 
-      const { data: updated, error } = await client
-        .from('places')
-        .update({ status, sale_amount: nextSaleAmount, status_changed_at: now, updated_at: now })
-        .eq('user_id', userId)
-        .eq('id', id)
-        .select();
-      if (error) throwStoreError(error, 'Impossible de mettre à jour le statut.');
-      const row = (Array.isArray(updated) ? updated[0] : updated) ?? { ...current, status, sale_amount: nextSaleAmount };
-
-      let details = `Statut : ${STATUS_LABELS[previousStatus]} → ${STATUS_LABELS[status]}.`;
-      if (status === 'sold') details += ` Montant de vente : ${euros(nextSaleAmount)}.`;
-      const { error: logError } = await client.from('activity_log').insert({
+      const { error } = await client.from('visit_history').insert({
         user_id: userId,
-        action: 'status_changed',
-        place_name: row.name,
-        address: row.address,
-        details,
+        place_id: current.id,
+        status,
+        comment,
+        sale_amount: visitSaleAmount,
+        changed_at: new Date().toISOString(),
       });
-      if (logError) throwStoreError(logError, "Impossible d'enregistrer l'historique.");
+      if (error) throwStoreError(error, "Impossible d'enregistrer la visite.");
 
-      return mapPlaceRow(row);
+      let details = `Résultat : ${STATUS_LABELS[status]}.`;
+      if (status === 'sold') details += ` Montant de vente : ${euros(visitSaleAmount)}.`;
+      if (comment) details += ` Commentaire : ${comment}`;
+      await logActivity(userId, 'visit_recorded', current, details);
+
+      return changeStatus(userId, current, status, visitSaleAmount);
     },
 
     /**
@@ -277,15 +333,7 @@ export function createStore({ client }) {
         .select();
       if (error) throwStoreError(error, 'Impossible de mettre à jour le montant de la vente.');
       const row = (Array.isArray(updated) ? updated[0] : updated) ?? { ...current, sale_amount: saleAmount };
-
-      const { error: logError } = await client.from('activity_log').insert({
-        user_id: userId,
-        action: 'sale_amount_changed',
-        place_name: row.name,
-        address: row.address,
-        details: `Montant de vente : ${euros(previousSaleAmount)} → ${euros(saleAmount)}.`,
-      });
-      if (logError) throwStoreError(logError, "Impossible d'enregistrer l'historique.");
+      await logActivity(userId, 'sale_amount_changed', row, `Montant de vente : ${euros(previousSaleAmount)} → ${euros(saleAmount)}.`);
 
       return mapPlaceRow(row);
     },
