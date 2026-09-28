@@ -26,6 +26,9 @@ function throwStoreError(error, fallback) {
   throw new Error(error?.message || fallback);
 }
 
+/** Rounds a euro amount to the cent, as every stored sale amount is. */
+const roundCents = (amount) => Math.round(amount * 100) / 100;
+
 /** Formats a euro amount the way every activity_log detail and the UI display it. */
 export function euros(amount) {
   return Number(amount || 0).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' });
@@ -110,7 +113,7 @@ export function createStore({ client }) {
     if (previousStatus === status) return mapPlaceRow(current);
 
     const nextSaleAmount =
-      status === 'sold' ? Math.round((saleAmount != null ? saleAmount : await readSalePrice(userId)) * 100) / 100 : null;
+      status === 'sold' ? roundCents(saleAmount != null ? saleAmount : await readSalePrice(userId)) : null;
     const now = new Date().toISOString();
 
     const { data: updated, error } = await client
@@ -288,7 +291,7 @@ export function createStore({ client }) {
       if (current.status !== 'scheduled') throw new Error("Cet établissement n'est pas programmé pour visite.");
 
       comment = String(comment ?? '').trim();
-      const visitSaleAmount = status === 'sold' ? Math.round(saleAmount * 100) / 100 : null;
+      const visitSaleAmount = status === 'sold' ? roundCents(saleAmount) : null;
 
       const { error } = await client.from('visit_history').insert({
         user_id: userId,
@@ -322,7 +325,7 @@ export function createStore({ client }) {
       const current = await findPlaceRow(userId, id);
       if (current.status !== 'sold') throw new Error("Cet établissement n'est pas vendu.");
       const previousSaleAmount = current.sale_amount;
-      saleAmount = Math.round(saleAmount * 100) / 100;
+      saleAmount = roundCents(saleAmount);
 
       const now = new Date().toISOString();
       const { data: updated, error } = await client

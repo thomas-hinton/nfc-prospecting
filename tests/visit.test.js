@@ -3,7 +3,7 @@ import { parseSaleAmount, scheduledVisits } from '../src/visit.js';
 
 function place(overrides = {}) {
   return {
-    placeId: `place-${Math.random()}`,
+    placeId: 'place-1',
     name: 'Boulangerie du Port',
     address: '12 quai du Port, 83270 Saint-Cyr-sur-Mer',
     city: 'Saint-Cyr-sur-Mer',

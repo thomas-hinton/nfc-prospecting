@@ -1,5 +1,5 @@
 import { bootstrapStore } from './bootstrap.js';
-import { euros } from './store.js';
+import { STATUS_LABELS, euros } from './store.js';
 import { mapsUrl } from './place-fields.js';
 
 /**
@@ -14,13 +14,8 @@ const $ = (selector) => document.querySelector(selector);
 const escapeHtml = (text = '') =>
   String(text).replace(/[&<>'"]/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[character]);
 
-/** The four outcome buttons, in display order, with their labels. */
-const OUTCOMES = {
-  sold: { label: 'Vendu', className: 'sold' },
-  refused: { label: 'Refusé', className: 'refused' },
-  non_compliant: { label: 'Non conforme', className: 'non_compliant' },
-  to_visit: { label: 'À visiter', className: 'to_visit' },
-};
+/** The four outcome buttons, in display order; each statut doubles as the button's class. */
+const OUTCOMES = ['sold', 'refused', 'non_compliant', 'to_visit'];
 
 const SAVE_ERROR = "La visite n'a pas pu être enregistrée. Vérifie ta connexion et réessaie : ta saisie est conservée.";
 
@@ -121,14 +116,11 @@ function renderEditor() {
     editor.classList.add('hidden');
     return;
   }
-  const selected = state.pendingStatus ? OUTCOMES[state.pendingStatus] : null;
-  const outcomeButtons = Object.entries(OUTCOMES)
-    .map(
-      ([status, meta]) =>
-        `<button class="${meta.className} ${state.pendingStatus === status ? 'active' : ''}" data-visit-status="${status}" type="button">${meta.label}</button>`
-    )
-    .join('');
-  editor.innerHTML = `<button id="visit-close" class="visit-close" type="button" aria-label="Fermer">×</button><p class="eyebrow">VISITE PROGRAMMÉE</p><h2>${escapeHtml(place.name)}</h2><p class="visit-address">${escapeHtml(place.address)}</p><button id="visit-open-google" class="visit-open-google" type="button">Ouvrir la fiche Google</button><div class="visit-status-options">${outcomeButtons}</div><div class="visit-fields ${selected ? selected.className : ''}">${outcomeFields(state.pendingStatus)}</div><p id="visit-error" class="visit-error hidden" role="alert"></p><button id="visit-save" class="primary visit-save" type="button">Enregistrer la visite</button>`;
+  const outcomeButtons = OUTCOMES.map(
+    (status) =>
+      `<button class="${status} ${state.pendingStatus === status ? 'active' : ''}" data-visit-status="${status}" type="button">${STATUS_LABELS[status]}</button>`
+  ).join('');
+  editor.innerHTML = `<button id="visit-close" class="visit-close" type="button" aria-label="Fermer">×</button><p class="eyebrow">VISITE PROGRAMMÉE</p><h2>${escapeHtml(place.name)}</h2><p class="visit-address">${escapeHtml(place.address)}</p><button id="visit-open-google" class="visit-open-google" type="button">Ouvrir la fiche Google</button><div class="visit-status-options">${outcomeButtons}</div><div class="visit-fields ${state.pendingStatus ?? ''}">${outcomeFields(state.pendingStatus)}</div><p id="visit-error" class="visit-error hidden" role="alert"></p><button id="visit-save" class="primary visit-save" type="button">Enregistrer la visite</button>`;
   editor.classList.remove('hidden');
 
   $('#visit-close').onclick = () => {
@@ -159,7 +151,7 @@ function requestVisitSave() {
   const status = state.pendingStatus;
   const comment = $('#visit-comment')?.value.trim() || '';
   const saleAmount = status === 'sold' ? parseSaleAmount($('#visit-sale-amount').value) : undefined;
-  $('#visit-confirm-text').textContent = `Tu vas passer « ${place.name || 'cet établissement'} » au statut « ${OUTCOMES[status].label} »${status === 'sold' ? ` pour ${euros(saleAmount)}.` : '.'}`;
+  $('#visit-confirm-text').textContent = `Tu vas passer « ${place.name || 'cet établissement'} » au statut « ${STATUS_LABELS[status]} »${status === 'sold' ? ` pour ${euros(saleAmount)}.` : '.'}`;
   $('#visit-confirm').classList.remove('hidden');
   $('#visit-confirm-save').onclick = () => saveVisit(place, status, { comment, saleAmount });
 }
@@ -172,22 +164,34 @@ async function saveVisit(place, status, { comment, saleAmount }) {
   showSaveError('');
   refreshSaveButton();
   try {
-    const updated = await store.recordVisit(place.id, status, { comment, saleAmount });
-    state.places = state.places.map((item) => (item.id === updated.id ? updated : item));
-    $('#visit-confirm').classList.add('hidden');
-    closeEditor();
-    renderVisits();
-    showToast(`Visite enregistrée : ${OUTCOMES[status].label}.`);
+    visitSaved(await store.recordVisit(place.id, status, { comment, saleAmount }));
   } catch (error) {
     console.error(error);
-    // The form is left as it is — outcome, comment and amount — so the save can be retried.
     $('#visit-confirm').classList.add('hidden');
-    showSaveError(SAVE_ERROR);
+    // The statut change is the visit's last write, so a failure can still come after it
+    // landed (the log entry that follows it, or a reply lost on the network). The visit is
+    // then recorded and a retry would be refused: re-read the établissement before offering one.
+    const current = await store
+      .listPlaces()
+      .then((places) => places.find((item) => item.id === place.id))
+      .catch(() => null);
+    if (current && current.status !== 'scheduled') visitSaved(current);
+    // Otherwise the form is left as it is — outcome, comment and amount — so the save can be retried.
+    else showSaveError(SAVE_ERROR);
   } finally {
     state.saving = false;
     confirmButton.disabled = false;
     if (activePlace()) refreshSaveButton();
   }
+}
+
+/** Takes the établissement, now resolved, off the list. */
+function visitSaved(updated) {
+  state.places = state.places.map((item) => (item.id === updated.id ? updated : item));
+  $('#visit-confirm').classList.add('hidden');
+  closeEditor();
+  renderVisits();
+  showToast(`Visite enregistrée : ${STATUS_LABELS[updated.status]}.`);
 }
 
 function showToast(message) {
@@ -205,12 +209,15 @@ async function start() {
   $('#visit-confirm-cancel').addEventListener('click', () => $('#visit-confirm').classList.add('hidden'));
 
   // Without the settings the vendu amount simply starts empty, to be typed in.
-  store
+  const salePrice = store
     .getSettings()
-    .then((settings) => (state.salePrice = settings.salePrice))
-    .catch((error) => console.error(error));
+    .then((settings) => settings.salePrice)
+    .catch((error) => {
+      console.error(error);
+      return null;
+    });
   try {
-    state.places = await store.listPlaces();
+    [state.places, state.salePrice] = await Promise.all([store.listPlaces(), salePrice]);
   } catch (error) {
     console.error(error);
     $('#visit-list-message').textContent = 'Les visites sont indisponibles. Réessaie dans un instant.';
