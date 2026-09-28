@@ -21,7 +21,6 @@ const STATIC_FILES = [
   'visite.html',
   'backlog.html',
   'styles.css',
-  'visit.js',
 ];
 
 const supabaseUrl = process.env.SUPABASE_URL ?? '';
@@ -52,6 +51,7 @@ await esbuild.build({
     'nfc-login': join(root, 'src/login.js'),
     'nfc-prospection': join(root, 'src/prospection.js'),
     'nfc-backlog': join(root, 'src/backlog.js'),
+    'nfc-visit': join(root, 'src/visit.js'),
   },
   outdir: dist,
   bundle: true,
@@ -61,4 +61,4 @@ await esbuild.build({
   logLevel: 'info',
 });
 
-console.log(`[build] ${STATIC_FILES.length + 1} static files + 4 bundles → dist/`);
+console.log(`[build] ${STATIC_FILES.length + 1} static files + 5 bundles → dist/`);

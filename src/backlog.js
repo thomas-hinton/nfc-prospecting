@@ -19,9 +19,14 @@ function formatDate(value) {
   }
 }
 
-// French labels for known activity_log actions (src/store.js writes 'place_added' on add;
-// later tickets add more). An action without a label here still displays as its raw code.
-const ACTION_LABELS = { place_added: 'Établissement ajouté' };
+// French labels for every activity_log action src/store.js writes. An action without a
+// label here (say, one from an older version) still displays as its raw code.
+const ACTION_LABELS = {
+  place_added: 'Établissement ajouté',
+  status_changed: 'Statut modifié',
+  sale_amount_changed: 'Montant de vente modifié',
+  visit_recorded: 'Visite enregistrée',
+};
 const actionLabel = (action) => ACTION_LABELS[action] || action;
 
 let store = null;

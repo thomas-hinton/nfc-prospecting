@@ -20,7 +20,7 @@ The town an établissement sits in, and the unit the prospector plans a round in
 What a set of not-yet-sold établissements would be worth if every one of them sold at the configured sale price: their count × that price. An estimate, never revenue — no sale has happened, and the figure moves when the sale price is changed in the settings. Only the pipeline statuts (programmé pour visite, à visiter) have one; vendu has an actual amount, and refusé / non conforme have neither.
 
 **Backlog**:
-The read-only technical audit trail of everything that happened to the prospecting data — établissement added, status changed, comment added, Google API request made. This is not a product/task backlog; this repo's actual issue backlog lives in GitHub Issues (see `docs/agents/issue-tracker.md`).
+The read-only technical audit trail of everything that happened to the prospecting data — établissement added, status changed, sale amount changed, visite recorded (carrying the visit's comment), Google API request made. Each entry about an établissement is linked to it, so its own history can be read back; deleting the établissement keeps the entries, unlinked. This is not a product/task backlog; this repo's actual issue backlog lives in GitHub Issues (see `docs/agents/issue-tracker.md`).
 
 **Quota**:
 The running count of Google Maps Platform API requests (Places API + Maps JavaScript API, combined) consumed in the current calendar month, checked against the account's monthly limit (1 000 by default) before each request that would consume it. The check and the increment happen together, in the database, so two devices can't both read a stale count and jointly overshoot.

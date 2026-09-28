@@ -436,6 +436,177 @@ describe('statut & montant de vente', () => {
   });
 });
 
+describe('linking activity_log to établissements', () => {
+  const boulangerie = { placeId: 'place-123', name: 'Boulangerie du Port', address: '12 quai du Port, 83270 Saint-Cyr-sur-Mer' };
+
+  async function signedInWithBoulangerie() {
+    const { store, client } = setup();
+    await store.signIn(account.email, account.password);
+    const { place } = await store.upsertPlace(boulangerie);
+    return { store, client, place };
+  }
+
+  it('links the place_added entry to the établissement it added', async () => {
+    const { client, place } = await signedInWithBoulangerie();
+    expect(client.state.tables.activity_log.at(-1)).toMatchObject({ action: 'place_added', place_ref: place.id });
+  });
+
+  it('links the status_changed entry to its établissement', async () => {
+    const { store, client, place } = await signedInWithBoulangerie();
+    await store.setStatus(place.id, 'scheduled');
+    expect(client.state.tables.activity_log.at(-1)).toMatchObject({ action: 'status_changed', place_ref: place.id });
+  });
+
+  it('links the sale_amount_changed entry to its établissement', async () => {
+    const { store, client, place } = await signedInWithBoulangerie();
+    await store.setStatus(place.id, 'sold', { saleAmount: 100 });
+    await store.setSaleAmount(place.id, 180);
+    expect(client.state.tables.activity_log.at(-1)).toMatchObject({ action: 'sale_amount_changed', place_ref: place.id });
+  });
+
+  it('exposes the link as placeRef on the Backlog entries', async () => {
+    const { store, place } = await signedInWithBoulangerie();
+    const { entries } = await store.listActivityLog();
+    expect(entries[0].placeRef).toBe(place.id);
+  });
+});
+
+describe('recordVisit', () => {
+  const boulangerie = { placeId: 'place-123', name: 'Boulangerie du Port', address: '12 quai du Port, 83270 Saint-Cyr-sur-Mer' };
+
+  /** A signed-in store holding one établissement programmé pour visite. */
+  async function scheduledBoulangerie() {
+    const { store, client } = setup();
+    await store.signIn(account.email, account.password);
+    const { place } = await store.upsertPlace(boulangerie);
+    await store.setStatus(place.id, 'scheduled');
+    return { store, client, place };
+  }
+
+  /** The activity_log entries written after the établissement was added and programmé. */
+  const visitEntries = (client) => client.state.tables.activity_log.slice(2);
+
+  it('records a vendu visit with its sale amount', async () => {
+    const { store, client, place } = await scheduledBoulangerie();
+
+    const updated = await store.recordVisit(place.id, 'sold', { saleAmount: 120, comment: 'Carte remise au gérant.' });
+
+    expect(updated).toMatchObject({ status: 'sold', saleAmount: 120 });
+    expect(client.state.tables.places[0]).toMatchObject({ status: 'sold', sale_amount: 120 });
+
+    const history = client.state.tables.visit_history;
+    expect(history).toHaveLength(1);
+    expect(history[0]).toMatchObject({ user_id: account.id, place_id: place.id, status: 'sold', comment: 'Carte remise au gérant.', sale_amount: 120 });
+    expect(history[0].changed_at).toEqual(expect.any(String));
+
+    const entries = visitEntries(client);
+    expect(entries.map((entry) => entry.action)).toEqual(['visit_recorded', 'status_changed']);
+    entries.forEach((entry) => expect(entry.place_ref).toBe(place.id));
+    expect(entries[0].details).toMatch(/vendu/i);
+    expect(entries[0].details).toMatch(/120/);
+    expect(entries[0].details).toMatch(/Carte remise au gérant\./);
+  });
+
+  it.each([
+    ['refused', /refusé/i],
+    ['non_compliant', /non conforme/i],
+  ])('records a %s visit with a comment, without a sale amount', async (status, label) => {
+    const { store, client, place } = await scheduledBoulangerie();
+
+    const updated = await store.recordVisit(place.id, status, { comment: 'Déjà équipé.' });
+
+    expect(updated).toMatchObject({ status, saleAmount: null });
+    expect(client.state.tables.visit_history).toEqual([
+      expect.objectContaining({ place_id: place.id, status, comment: 'Déjà équipé.', sale_amount: null }),
+    ]);
+    const entries = visitEntries(client);
+    expect(entries.map((entry) => entry.action)).toEqual(['visit_recorded', 'status_changed']);
+    entries.forEach((entry) => expect(entry.place_ref).toBe(place.id));
+    expect(entries[0].details).toMatch(label);
+    expect(entries[0].details).toMatch(/Déjà équipé\./);
+    expect(entries[0].details).not.toMatch(/montant/i);
+  });
+
+  it.each(['refused', 'non_compliant'])('records a %s visit without a comment, still logging the visit', async (status) => {
+    const { store, client, place } = await scheduledBoulangerie();
+
+    await store.recordVisit(place.id, status);
+
+    expect(client.state.tables.visit_history).toEqual([expect.objectContaining({ status, comment: '', sale_amount: null })]);
+    const entries = visitEntries(client);
+    expect(entries.map((entry) => entry.action)).toEqual(['visit_recorded', 'status_changed']);
+    entries.forEach((entry) => expect(entry.place_ref).toBe(place.id));
+    expect(entries[0].details).not.toMatch(/commentaire/i);
+  });
+
+  it('records an à visiter visit, sending the établissement back to the pool', async () => {
+    const { store, client, place } = await scheduledBoulangerie();
+
+    const updated = await store.recordVisit(place.id, 'to_visit', { comment: 'Fermé, repasser lundi.' });
+
+    expect(updated.status).toBe('to_visit');
+    expect(client.state.tables.visit_history).toEqual([expect.objectContaining({ status: 'to_visit', comment: 'Fermé, repasser lundi.' })]);
+    const entries = visitEntries(client);
+    expect(entries.map((entry) => entry.action)).toEqual(['visit_recorded', 'status_changed']);
+    entries.forEach((entry) => expect(entry.place_ref).toBe(place.id));
+    expect(entries[0].details).toMatch(/à visiter/i);
+  });
+
+  it('trims the comment it records', async () => {
+    const { store, client, place } = await scheduledBoulangerie();
+    await store.recordVisit(place.id, 'refused', { comment: '   ' });
+    expect(client.state.tables.visit_history[0].comment).toBe('');
+  });
+
+  it('accepts a vendu at 0 €', async () => {
+    const { store, place } = await scheduledBoulangerie();
+    const updated = await store.recordVisit(place.id, 'sold', { saleAmount: 0 });
+    expect(updated.saleAmount).toBe(0);
+  });
+
+  it.each([
+    ['missing', undefined],
+    ['null', null],
+    ['negative', -5],
+    ['not a number', Number.NaN],
+    ['a string', '50'],
+  ])('rejects a vendu whose sale amount is %s, writing nothing', async (_case, saleAmount) => {
+    const { store, client, place } = await scheduledBoulangerie();
+
+    await expect(store.recordVisit(place.id, 'sold', { saleAmount })).rejects.toThrow(/montant/i);
+
+    expect(client.state.tables.visit_history).toHaveLength(0);
+    expect(visitEntries(client)).toHaveLength(0);
+    expect(client.state.tables.places[0].status).toBe('scheduled');
+  });
+
+  it('rejects an outcome that is not a visit outcome', async () => {
+    const { store, place } = await scheduledBoulangerie();
+    await expect(store.recordVisit(place.id, 'scheduled')).rejects.toThrow(/résultat/i);
+  });
+
+  it('refuses to record a visit on an établissement not programmé pour visite', async () => {
+    const { store, client } = setup();
+    await store.signIn(account.email, account.password);
+    const { place } = await store.upsertPlace(boulangerie);
+
+    await expect(store.recordVisit(place.id, 'refused')).rejects.toThrow(/programmé/i);
+    expect(client.state.tables.visit_history).toHaveLength(0);
+  });
+
+  it('leaves the établissement programmé pour visite when a write fails midway, so the save can be retried', async () => {
+    const { store, client, place } = await scheduledBoulangerie();
+    client.state.failures.push({ table: 'places', op: 'update', message: 'réseau indisponible' });
+
+    await expect(store.recordVisit(place.id, 'refused')).rejects.toThrow(/réseau/);
+    expect(client.state.tables.places[0].status).toBe('scheduled');
+
+    client.state.failures = [];
+    const updated = await store.recordVisit(place.id, 'refused');
+    expect(updated.status).toBe('refused');
+  });
+});
+
 describe('listActivityLog', () => {
   function activityRow(overrides = {}) {
     return {

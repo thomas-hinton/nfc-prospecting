@@ -1,7 +1,7 @@
 import { bootstrapStore } from './bootstrap.js';
 import { readConfig } from './supabase-client.js';
 import { STATUS_LABELS, euros } from './store.js';
-import { placeTypeLabel } from './place-fields.js';
+import { mapsUrl, placeTypeLabel } from './place-fields.js';
 import {
   BULK_STATUSES,
   bulkImpact,
@@ -48,11 +48,6 @@ const SORT_DIRECTIONS = {
 const $ = (selector) => document.querySelector(selector);
 const escapeHtml = (text = '') =>
   String(text).replace(/[&<>'"]/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[character]);
-
-function mapsUrl(place) {
-  const query = encodeURIComponent(`${place.name} ${place.address}`.trim());
-  return `https://www.google.com/maps/search/?api=1&query_place_id=${encodeURIComponent(place.placeId)}&query=${query}`;
-}
 
 function markerIcon(status, selected) {
   return {

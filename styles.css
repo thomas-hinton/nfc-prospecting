@@ -154,3 +154,4 @@ body[data-requires-auth] { visibility:hidden; }
   .dashboard-print-sheet small { display:block; color:#444; }
   .dashboard-print-sheet .amount { text-align:right; white-space:nowrap; }
 }
+.visit-open-google { min-height:38px; margin:-8px 0 18px; padding:7px 12px; border:1px solid #d8dee8; border-radius:8px; background:#fff; color:#344054; font-size:12px; font-weight:750; }.visit-error { margin:-6px 0 14px; padding:10px 12px; border:1px solid #f5abb0; border-radius:8px; background:#fff0f1; color:#b4232b; font-size:12px; font-weight:700; line-height:1.4; }.visit-error.hidden { display:none; }
