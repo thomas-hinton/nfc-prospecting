@@ -705,7 +705,7 @@ describe('listPlaceHistory', () => {
     expect(entries[0]).toMatchObject({ action: 'visit_recorded', details: 'Résultat : À visiter. Commentaire : fermé', placeRef: 'place-a' });
   });
 
-  it('keeps both entries a visite writes, visit then statut', async () => {
+  it('keeps both entries a visite writes, neither hidden nor merged', async () => {
     const { store } = setup();
     await store.signIn(account.email, account.password);
     const { place } = await store.upsertPlace({ placeId: 'g-1', name: 'Boulangerie du Port', address: '12 quai du Port' });

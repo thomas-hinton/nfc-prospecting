@@ -86,15 +86,15 @@ function ensureOverlay() {
  * @param {{ id: string, name?: string, address?: string }} place
  */
 export async function openPlaceHistory(store, place) {
-  const panel = ensureOverlay();
+  ensureOverlay();
   const current = ++generation;
-  panel.querySelector('#history-title').textContent = place.name || 'Établissement';
-  panel.querySelector('.history-address').textContent = place.address || '';
-  const body = panel.querySelector('.history-body');
+  overlay.querySelector('#history-title').textContent = place.name || 'Établissement';
+  overlay.querySelector('.history-address').textContent = place.address || '';
+  const body = overlay.querySelector('.history-body');
   body.innerHTML = '<p class="history-empty">Chargement…</p>';
-  panel.classList.remove('hidden');
+  overlay.classList.remove('hidden');
   document.addEventListener('keydown', onKeydown);
-  panel.querySelector('.history-close').focus();
+  overlay.querySelector('.history-close').focus();
 
   let entries;
   try {
